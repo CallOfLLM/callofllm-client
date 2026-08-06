@@ -326,6 +326,30 @@ export default function Home() {
           </table>
         )}
       </div>
+
+      {/* 서버 통신 로그 */}
+      <div className="fixed bottom-3 left-3 w-136 h-72 flex flex-col rounded-md bg-black/70 text-white">
+        <div className="flex items-center justify-between px-3 py-2 text-xs font-bold border-b border-white/15">
+          <span>서버 로그 ({logs.length})</span>
+          <button onClick={() => setLogs([])} className="rounded bg-white/15 px-2 py-1 font-normal hover:bg-white/25">
+            지우기
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-3 py-2 font-mono text-[11px] leading-relaxed">
+          {logs.length === 0 ? (
+            <div className="text-white/40">접속하면 여기에 송수신 로그가 표시됩니다</div>
+          ) : (
+            logs.map((l) => (
+              <div key={l.id} className={`whitespace-pre-wrap break-all ${LOG_COLOR[l.level]}`}>
+                <span className="text-white/35">{l.time} </span>
+                {l.text}
+              </div>
+            ))
+          )}
+          <div ref={logEndRef} />
+        </div>
+      </div>
     </div>
   );
 }
