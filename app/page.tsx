@@ -5,7 +5,7 @@ import { Box, OrbitControls, Plane } from "@react-three/drei";
 import { useEffect, useRef, useState } from "react";
 import { createSquad, moveSquad, dump, parseSoldierSnapshot, type Soldier } from "./(lib)/_packet";
 
-const WS_URL = "ws://122.32.12.199:80";
+const DEFAULT_WS_URL = "ws://122.32.12.199:80";
 
 // 맵 좌표계: 좌상단 모서리가 원점(0,0), X는 가로 0~640, Y(3D의 z)는 세로 0~320.
 // 서버가 unsigned int를 쓰므로 음수 좌표가 나오지 않게 원점을 모서리에 맞춘다.
@@ -75,6 +75,7 @@ function summarize(v: unknown): string {
 
 export default function Home() {
   const wsRef = useRef<WebSocket | null>(null);
+  const [wsUrl, setWsUrl] = useState(DEFAULT_WS_URL);
 
   // onopen 이벤트에만 의존하지 않고 실제 readyState를 그대로 비춘다
   const [wsState, setWsState] = useState<number>(WebSocket.CLOSED);
@@ -134,16 +135,22 @@ export default function Home() {
       return;
     }
 
-    wsLog(`핸드셰이크 시작 → ${WS_URL}`);
+    const url = wsUrl.trim();
+    if (!url) {
+      pushLog("error", "서버 주소가 비어 있습니다");
+      return;
+    }
+
+    wsLog(`핸드셰이크 시작 → ${url}`);
     const startedAt = performance.now();
     const elapsed = () => `${Math.round(performance.now() - startedAt)}ms`;
 
     let ws: WebSocket;
     try {
-      ws = new WebSocket(WS_URL);
+      ws = new WebSocket(url);
     } catch (err) {
-      console.error("[WS] 생성 실패 — URL 형식을 확인하세요:", WS_URL, err);
-      pushLog("error", `생성 실패 — URL 형식 확인 필요: ${WS_URL}`);
+      console.error("[WS] 생성 실패 — URL 형식을 확인하세요:", url, err);
+      pushLog("error", `생성 실패 — 주소 형식 확인 필요 (ws:// 또는 wss:// 로 시작해야 함): ${url}`);
       return;
     }
 
@@ -254,13 +261,26 @@ export default function Home() {
       </Canvas>
 
       <div className="fixed top-0 left-0 w-full flex justify-start gap-5 items-center p-3">
-        <button
-          onClick={connected ? disconnect : connect}
-          disabled={wsState === WebSocket.CONNECTING || wsState === WebSocket.CLOSING}
-          className="w-30 h-15 min-w-30 min-h-15 bg-black rounded-md text-white text-base font-bold border-gray-400 border-2 disabled:opacity-50"
-        >
-          {wsState === WebSocket.OPEN ? "접속 해제" : wsState === WebSocket.CONNECTING ? "접속 중…" : wsState === WebSocket.CLOSING ? "종료 중…" : "접속"}
-        </button>
+        <div className="flex items-center gap-2 h-15 rounded-md bg-black/60 px-3 text-white">
+          <input
+            value={wsUrl}
+            onChange={(e) => setWsUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.nativeEvent.isComposing && wsState === WebSocket.CLOSED) connect();
+            }}
+            disabled={wsState !== WebSocket.CLOSED}
+            spellCheck={false}
+            placeholder="ws://호스트:포트"
+            className="w-72 rounded bg-white/20 px-2 py-2 font-mono text-sm disabled:opacity-50"
+          />
+          <button
+            onClick={connected ? disconnect : connect}
+            disabled={wsState === WebSocket.CONNECTING || wsState === WebSocket.CLOSING}
+            className="w-30 h-10 min-w-30 bg-white text-black rounded-md text-base font-bold disabled:opacity-40"
+          >
+            {wsState === WebSocket.OPEN ? "접속 해제" : wsState === WebSocket.CONNECTING ? "접속 중…" : wsState === WebSocket.CLOSING ? "종료 중…" : "접속"}
+          </button>
+        </div>
 
         <div className="flex items-center gap-2 h-15 rounded-md bg-black/60 px-3 text-white">
           {(
