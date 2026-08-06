@@ -44,9 +44,45 @@ function Soldiers({ soldiers }: { soldiers: Soldier[] }) {
   );
 }
 
+type LogLevel = "info" | "send" | "recv" | "warn" | "error";
+type LogEntry = { id: number; time: string; level: LogLevel; text: string };
+
+const LOG_COLOR: Record<LogLevel, string> = {
+  info: "text-white/80",
+  send: "text-sky-300",
+  recv: "text-emerald-300",
+  warn: "text-amber-300",
+  error: "text-red-400",
+};
+
+const LOG_LIMIT = 300;
+
+/** 로그 패널에 한 줄로 보여줄 요약 문자열 */
+function summarize(v: unknown): string {
+  if (v == null) return "";
+  if (typeof v !== "object") return String(v);
+
+  const o = v as Record<string, unknown>;
+  if (typeof o.name === "string" && Array.isArray(o.fields)) {
+    return `${o.name} fields=[${(o.fields as number[]).join(", ")}] len=${o.pktLen}`;
+  }
+  try {
+    return JSON.stringify(v).slice(0, 200);
+  } catch {
+    return "";
+  }
+}
+
 export default function Home() {
   const wsRef = useRef<WebSocket | null>(null);
-  const [connected, setConnected] = useState(false);
+
+  // onopen 이벤트에만 의존하지 않고 실제 readyState를 그대로 비춘다
+  const [wsState, setWsState] = useState<number>(WebSocket.CLOSED);
+  const connected = wsState === WebSocket.OPEN;
+
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const logIdRef = useRef(0);
+  const logEndRef = useRef<HTMLDivElement>(null);
 
   // PKT_CS_CREATE_SQUAD 입력값
   const [archerNum, setArcherNum] = useState(3);
@@ -64,10 +100,32 @@ export default function Home() {
     return () => wsRef.current?.close();
   }, []);
 
+  // 이벤트를 놓치더라도 버튼이 실제 소켓 상태와 어긋나지 않게 주기적으로 맞춘다
+  useEffect(() => {
+    const id = setInterval(() => {
+      setWsState(wsRef.current?.readyState ?? WebSocket.CLOSED);
+    }, 200);
+    return () => clearInterval(id);
+  }, []);
+
+  // 로그가 쌓이면 항상 최신 줄이 보이게
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ block: "end" });
+  }, [logs]);
+
+  const pushLog = (level: LogLevel, text: string) => {
+    const time = new Date().toTimeString().slice(0, 8);
+    setLogs((prev) => [...prev.slice(-(LOG_LIMIT - 1)), { id: logIdRef.current++, time, level, text }]);
+  };
+
   const wsLog = (label: string, ...rest: unknown[]) => {
     const time = new Date().toISOString().slice(11, 23);
     const state = wsRef.current ? READY_STATE[wsRef.current.readyState] : "NONE";
     console.log(`%c[WS ${time}]%c ${label} %c(${state})`, "color:#0af;font-weight:bold", "color:inherit", "color:#888", ...rest);
+
+    const detail = summarize(rest[0]);
+    const level: LogLevel = label.startsWith("SEND") ? "send" : label.startsWith("RECV") ? "recv" : "info";
+    pushLog(level, detail ? `${label} — ${detail}` : label);
   };
 
   const connect = () => {
@@ -85,6 +143,7 @@ export default function Home() {
       ws = new WebSocket(WS_URL);
     } catch (err) {
       console.error("[WS] 생성 실패 — URL 형식을 확인하세요:", WS_URL, err);
+      pushLog("error", `생성 실패 — URL 형식 확인 필요: ${WS_URL}`);
       return;
     }
 
@@ -98,7 +157,7 @@ export default function Home() {
         extensions: ws.extensions || "(없음)",
         event: e,
       });
-      setConnected(true);
+      setWsState(ws.readyState);
     };
 
     ws.onmessage = (e) => {
@@ -121,12 +180,15 @@ export default function Home() {
 
     ws.onerror = (e) => {
       console.error(`[WS] ERROR (${elapsed()}) — 브라우저는 보안상 상세 사유를 주지 않습니다. 바로 뒤에 오는 CLOSE 코드를 보세요.`, e);
+      pushLog("error", `ERROR (${elapsed()}) — 사유는 뒤따르는 CLOSE 코드로 확인`);
     };
 
     ws.onclose = (e) => {
-      console.warn(`[WS] CLOSE (${elapsed()}) code=${e.code} (${CLOSE_REASON[e.code] ?? "알 수 없는 코드"}) reason="${e.reason || "(없음)"}" wasClean=${e.wasClean}`, e);
+      const reason = CLOSE_REASON[e.code] ?? "알 수 없는 코드";
+      console.warn(`[WS] CLOSE (${elapsed()}) code=${e.code} (${reason}) reason="${e.reason || "(없음)"}" wasClean=${e.wasClean}`, e);
+      pushLog("warn", `CLOSE (${elapsed()}) code=${e.code} — ${reason}`);
       wsRef.current = null;
-      setConnected(false);
+      setWsState(WebSocket.CLOSED);
       setSoldiers([]);
     };
   };
@@ -192,8 +254,12 @@ export default function Home() {
       </Canvas>
 
       <div className="fixed top-0 left-0 w-full flex justify-start gap-5 items-center p-3">
-        <button onClick={connected ? disconnect : connect} className="w-30 h-15 min-w-30 min-h-15 bg-black rounded-md text-white text-base font-bold border-gray-400 border-2">
-          {connected ? "접속 해제" : "접속"}
+        <button
+          onClick={connected ? disconnect : connect}
+          disabled={wsState === WebSocket.CONNECTING || wsState === WebSocket.CLOSING}
+          className="w-30 h-15 min-w-30 min-h-15 bg-black rounded-md text-white text-base font-bold border-gray-400 border-2 disabled:opacity-50"
+        >
+          {wsState === WebSocket.OPEN ? "접속 해제" : wsState === WebSocket.CONNECTING ? "접속 중…" : wsState === WebSocket.CLOSING ? "종료 중…" : "접속"}
         </button>
 
         <div className="flex items-center gap-2 h-15 rounded-md bg-black/60 px-3 text-white">
