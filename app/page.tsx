@@ -1,163 +1,264 @@
 "use client";
 
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas } from "@react-three/fiber";
 import { Box, OrbitControls, Plane } from "@react-three/drei";
 import { useEffect, useRef, useState } from "react";
-import { Group } from "three";
-import { SquadType } from "./(lib)/_type";
+import { createSquad, moveSquad, dump, parseSoldierSnapshot, type Soldier } from "./(lib)/_packet";
 
-const RED_POS = { posX: 0, posY: 0 };
-const MOVE_SPEED = 2; // units per second
+const WS_URL = "ws://122.32.12.199:80";
 
-function createShieldWall(center: { posX: number; posY: number }, distance = 2): SquadType[] {
-  const wall: SquadType[] = [];
-  for (let dx = -distance; dx <= distance; dx++) {
-    for (let dy = -distance; dy <= distance; dy++) {
-      if (Math.max(Math.abs(dx), Math.abs(dy)) === distance) {
-        wall.push({ posX: center.posX + dx, posY: center.posY + dy, action: "idle" });
-      }
-    }
-  }
-  return wall;
-}
+// 맵 좌표계: 좌상단 모서리가 원점(0,0), X는 가로 0~640, Y(3D의 z)는 세로 0~320.
+// 서버가 unsigned int를 쓰므로 음수 좌표가 나오지 않게 원점을 모서리에 맞춘다.
+const MAP_W = 640;
+const MAP_H = 320;
 
-function Units({ squad, target, onArrive }: { squad: SquadType[]; target: { x: number; z: number } | null; onArrive: () => void }) {
-  const groupRef = useRef<Group>(null);
+const READY_STATE = ["CONNECTING", "OPEN", "CLOSING", "CLOSED"] as const;
 
-  useFrame((_, delta) => {
-    const group = groupRef.current;
-    if (!group || !target) return;
+const CLOSE_REASON: Record<number, string> = {
+  1000: "정상 종료",
+  1001: "엔드포인트 사라짐 (탭 닫힘/서버 종료)",
+  1002: "프로토콜 에러",
+  1003: "허용되지 않는 데이터 타입",
+  1005: "close 코드 없이 종료",
+  1006: "비정상 종료 — 핸드셰이크 실패/연결 끊김 (서버 미기동·방화벽·주소 오타 의심)",
+  1007: "잘못된 payload",
+  1008: "정책 위반",
+  1009: "메시지가 너무 큼",
+  1011: "서버 내부 오류",
+  1015: "TLS 핸드셰이크 실패",
+};
 
-    const dx = target.x - group.position.x;
-    const dz = target.z - group.position.z;
-    const dist = Math.hypot(dx, dz);
+// teamFlag → 색. 팀 번호 의미가 정해지면 여기만 바꾸면 된다.
+const TEAM_COLOR = ["#3b82f6", "#ef4444", "#22c55e", "#eab308"];
+const DEAD_COLOR = "#4b5563";
 
-    if (dist < 0.05) {
-      group.position.set(target.x, 0, target.z);
-      onArrive();
-      return;
-    }
-
-    const step = Math.min(MOVE_SPEED * delta, dist);
-    group.position.x += (dx / dist) * step;
-    group.position.z += (dz / dist) * step;
-  });
-
+function Soldiers({ soldiers }: { soldiers: Soldier[] }) {
   return (
-    <group ref={groupRef}>
-      <Box position={[RED_POS.posX, 0.5, RED_POS.posY]}>
-        <meshStandardMaterial color="red" />
-      </Box>
-
-      {squad.map((unit, i) => (
-        <Box key={i} position={[unit.posX, 0.5, unit.posY]}>
-          <meshStandardMaterial color="green" />
+    <>
+      {soldiers.map((s) => (
+        <Box key={`${s.squadID}-${s.soldierID}`} position={[s.posX, 0.5, s.posY]}>
+          <meshStandardMaterial color={s.hp <= 0 ? DEAD_COLOR : TEAM_COLOR[s.teamFlag % TEAM_COLOR.length]} />
         </Box>
       ))}
-    </group>
+    </>
   );
 }
 
 export default function Home() {
-  const [squad, setSquad] = useState<SquadType[]>(() => createShieldWall(RED_POS));
-  const [prompts, setPropmpt] = useState<string[]>([]);
-  const [prompt, setPrompt] = useState("");
-  const [target, setTarget] = useState<{ x: number; z: number } | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const [connected, setConnected] = useState(false);
 
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  // PKT_CS_CREATE_SQUAD 입력값
+  const [archerNum, setArcherNum] = useState(3);
+  const [warriorNum, setWarriorNum] = useState(5);
+  const [knightNum, setKnightNum] = useState(2);
 
+  // PKT_CS_MOVE_SQUAD 대상 부대 (서버가 생성 응답으로 내려주는 ID)
+  const [squadNum, setSquadNum] = useState(0);
+
+  // 서버가 내려준 병사 스냅샷 — 화면은 전적으로 이 값으로만 그린다
+  const [soldiers, setSoldiers] = useState<Soldier[]>([]);
+
+  // 페이지를 떠날 때 소켓 정리
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [prompts]);
+    return () => wsRef.current?.close();
+  }, []);
 
-  const setSquadAction = (action: SquadType["action"]) => {
-    setSquad((prev) => prev.map((unit) => ({ ...unit, action })));
+  const wsLog = (label: string, ...rest: unknown[]) => {
+    const time = new Date().toISOString().slice(11, 23);
+    const state = wsRef.current ? READY_STATE[wsRef.current.readyState] : "NONE";
+    console.log(`%c[WS ${time}]%c ${label} %c(${state})`, "color:#0af;font-weight:bold", "color:inherit", "color:#888", ...rest);
   };
 
-  const sendPrompt = async () => {
-    const text = prompt.trim();
-    if (!text) return;
-    setPropmpt((prev) => [...prev, text]);
-    setPrompt("");
+  const connect = () => {
+    if (wsRef.current) {
+      wsLog("연결 요청 무시 — 이미 소켓이 있음");
+      return;
+    }
 
+    wsLog(`핸드셰이크 시작 → ${WS_URL}`);
+    const startedAt = performance.now();
+    const elapsed = () => `${Math.round(performance.now() - startedAt)}ms`;
+
+    let ws: WebSocket;
     try {
-      const res = await fetch("/api/command", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: text }),
+      ws = new WebSocket(WS_URL);
+    } catch (err) {
+      console.error("[WS] 생성 실패 — URL 형식을 확인하세요:", WS_URL, err);
+      return;
+    }
+
+    ws.binaryType = "arraybuffer"; // 바이너리 패킷을 Blob 대신 ArrayBuffer로 받는다
+    wsRef.current = ws;
+    wsLog("WebSocket 객체 생성됨", { url: ws.url, binaryType: ws.binaryType });
+
+    ws.onopen = (e) => {
+      wsLog(`OPEN — 핸드셰이크 성공 (${elapsed()})`, {
+        protocol: ws.protocol || "(없음)",
+        extensions: ws.extensions || "(없음)",
+        event: e,
       });
-      if (!res.ok) {
-        console.error("Command request failed:", await res.text());
+      setConnected(true);
+    };
+
+    ws.onmessage = (e) => {
+      if (!(e.data instanceof ArrayBuffer)) {
+        wsLog(`RECV (텍스트 ${String(e.data).length}자)`, e.data);
         return;
       }
 
-      const command: { action: string; posx: number; posy: number; message: string } = await res.json();
-      setPropmpt((prev) => [...prev, command.message]);
-      if (command.action === "none") return;
-      setTarget({ x: command.posx, z: command.posy });
-      setSquadAction("walk");
-    } catch (err) {
-      console.error("Failed to send prompt:", err);
+      wsLog(`RECV (${e.data.byteLength}바이트)`, dump(e.data));
+
+      const snapshot = parseSoldierSnapshot(e.data);
+      if (!snapshot) {
+        wsLog("RECV — 병사 스냅샷 레이아웃과 길이가 맞지 않음, 무시");
+        return;
+      }
+
+      wsLog(`RECV 병사 스냅샷 ${snapshot.soldierCount}명`, snapshot.soldiers);
+      setSoldiers(snapshot.soldiers);
+    };
+
+    ws.onerror = (e) => {
+      console.error(`[WS] ERROR (${elapsed()}) — 브라우저는 보안상 상세 사유를 주지 않습니다. 바로 뒤에 오는 CLOSE 코드를 보세요.`, e);
+    };
+
+    ws.onclose = (e) => {
+      console.warn(`[WS] CLOSE (${elapsed()}) code=${e.code} (${CLOSE_REASON[e.code] ?? "알 수 없는 코드"}) reason="${e.reason || "(없음)"}" wasClean=${e.wasClean}`, e);
+      wsRef.current = null;
+      setConnected(false);
+      setSoldiers([]);
+    };
+  };
+
+  const disconnect = () => {
+    if (!wsRef.current) {
+      wsLog("해제 요청 무시 — 열린 소켓이 없음");
+      return;
     }
+    wsLog("close() 호출 — 종료 대기");
+    wsRef.current.close(1000, "client disconnect");
+  };
+
+  const sendPacket = (buf: ArrayBuffer) => {
+    const ws = wsRef.current;
+    if (ws?.readyState !== WebSocket.OPEN) {
+      wsLog("SEND 실패 — 소켓이 열려 있지 않음");
+      return false;
+    }
+    wsLog("SEND", dump(buf));
+    ws.send(buf);
+    return true;
+  };
+
+  const sendCreateSquad = () => {
+    sendPacket(createSquad(archerNum, warriorNum, knightNum));
+  };
+
+  const sendMoveSquad = (x: number, y: number) => {
+    // 맵 밖을 찍어도 unsigned int 범위를 벗어나지 않게 잘라낸다.
+    const posX = Math.min(MAP_W, Math.max(0, Math.round(x)));
+    const posY = Math.min(MAP_H, Math.max(0, Math.round(y)));
+    sendPacket(moveSquad(squadNum, posX, posY));
   };
 
   return (
     <div className="w-full h-dvh">
-      <Canvas camera={{ position: [8, 8, 8] }}>
+      <Canvas camera={{ position: [MAP_W / 2, 420, MAP_H + 380], far: 5000 }}>
         <ambientLight intensity={0.5} />
-        <directionalLight position={[5, 10, 5]} />
+        <directionalLight position={[MAP_W / 2, 400, MAP_H / 2]} />
 
+        {/* 평면은 중심 기준이라 절반씩 밀어 좌상단 모서리를 원점에 맞춘다 */}
         <Plane
-          args={[640, 320]}
+          args={[MAP_W, MAP_H]}
+          position={[MAP_W / 2, 0, MAP_H / 2]}
           rotation={[-Math.PI / 2, 0, 0]}
           onClick={(e) => {
             e.stopPropagation();
-            setTarget({ x: e.point.x, z: e.point.z });
-            setSquadAction("walk");
+            sendMoveSquad(e.point.x, e.point.z);
           }}
         >
           <meshStandardMaterial color="lightgray" />
         </Plane>
 
-        <Units
-          squad={squad}
-          target={target}
-          onArrive={() => {
-            setTarget(null);
-            setSquadAction("idle");
-          }}
-        />
+        {/* 원점 표시 — 맵의 (0,0) 모서리 */}
+        <Box position={[0, 0.5, 0]} args={[2, 1, 2]}>
+          <meshStandardMaterial color="black" />
+        </Box>
 
-        <OrbitControls />
+        <Soldiers soldiers={soldiers} />
+
+        <OrbitControls target={[MAP_W / 2, 0, MAP_H / 2]} />
       </Canvas>
 
       <div className="fixed top-0 left-0 w-full flex justify-start gap-5 items-center p-3">
-        <button className="w-30 h-15 min-w-30 min-h-15 bg-black rounded-md text-white text-base font-bold border-gray-400 border-2">SUMMON</button>
-      </div>
+        <button onClick={connected ? disconnect : connect} className="w-30 h-15 min-w-30 min-h-15 bg-black rounded-md text-white text-base font-bold border-gray-400 border-2">
+          {connected ? "접속 해제" : "접속"}
+        </button>
 
-      <div className="fixed bottom-22 left-0 w-120 h-130 flex flex-col justify-end p-3">
-        <div className="flex flex-col gap-2 overflow-y-auto rounded-md bg-black/30 p-3">
-          {prompts.map((message, i) => (
-            <div key={i} className="self-start max-w-full wrap-break-word rounded-md bg-white/80 px-3 py-2 text-sm text-black">
-              {message}
-            </div>
+        <div className="flex items-center gap-2 h-15 rounded-md bg-black/60 px-3 text-white">
+          {(
+            [
+              ["궁수", archerNum, setArcherNum],
+              ["전사", warriorNum, setWarriorNum],
+              ["기사", knightNum, setKnightNum],
+            ] as const
+          ).map(([label, value, setValue]) => (
+            <label key={label} className="flex items-center gap-1 text-sm">
+              {label}
+              <input type="number" min={0} value={value} onChange={(e) => setValue(Math.max(0, Number(e.target.value) || 0))} className="w-14 rounded bg-white/20 px-1 py-1 text-center" />
+            </label>
           ))}
-          <div ref={chatEndRef} />
+
+          <button onClick={sendCreateSquad} disabled={!connected} className="ml-1 h-10 px-3 bg-white text-black rounded-md font-bold disabled:opacity-40">
+            부대 생성
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2 h-15 rounded-md bg-black/60 px-3 text-white">
+          <label className="flex items-center gap-1 text-sm">
+            SquadNum
+            <input type="number" min={0} value={squadNum} onChange={(e) => setSquadNum(Math.max(0, Number(e.target.value) || 0))} className="w-16 rounded bg-white/20 px-1 py-1 text-center" />
+          </label>
+          <span className="text-xs text-white/60">바닥을 클릭하면 MOVE 패킷 전송</span>
         </div>
       </div>
 
-      <div className="fixed bottom-0 left-0 w-full flex justify-start gap-3 items-center h-24 p-3">
-        <input
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.nativeEvent.isComposing) sendPrompt();
-          }}
-          className="size-full bg-gray-500/40 rounded-md px-2"
-        />
-        <button onClick={sendPrompt} className="w-20 h-full bg-black text-white font-bold rounded-md">
-          SEND
-        </button>
+      {/* 수신한 병사 값 확인용 패널 */}
+      <div className="fixed top-3 right-3 w-72 max-h-[70dvh] overflow-y-auto rounded-md bg-black/70 p-3 text-white text-xs">
+        <div className="font-bold mb-2">병사 {soldiers.length}명</div>
+        {soldiers.length === 0 ? (
+          <div className="text-white/50">수신 대기 중</div>
+        ) : (
+          <table className="w-full">
+            <thead className="text-white/50">
+              <tr>
+                <th className="text-left">sq/id</th>
+                <th>team</th>
+                <th>pos</th>
+                <th>HP</th>
+                <th>st</th>
+              </tr>
+            </thead>
+            <tbody>
+              {soldiers.map((s) => (
+                <tr key={`${s.squadID}-${s.soldierID}`} className={s.hp <= 0 ? "text-white/40" : ""}>
+                  <td>
+                    {s.squadID}/{s.soldierID}
+                  </td>
+                  <td className="text-center" style={{ color: TEAM_COLOR[s.teamFlag % TEAM_COLOR.length] }}>
+                    ■ {s.teamFlag}
+                  </td>
+                  <td className="text-center">
+                    {s.posX},{s.posY}
+                  </td>
+                  <td className="text-center">{s.hp}</td>
+                  <td className="text-center">{s.state}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );
