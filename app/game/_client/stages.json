@@ -2,17 +2,12 @@
   {
     "id": 1,
     "title": "평원의 첫 전투",
-    "squads": [
-      { "teamFlag": 0, "archerCount": 5, "warriorCount": 10, "knightCount": 0, "spawnX": 1200, "spawnY": 1600 },
-      { "teamFlag": 1, "archerCount": 0, "warriorCount": 12, "knightCount": 0, "spawnX": 5200, "spawnY": 1600 }
-    ]
+    "squads": [{ "teamFlag": 1, "archerCount": 0, "warriorCount": 12, "knightCount": 0, "spawnX": 5200, "spawnY": 1600 }]
   },
   {
     "id": 2,
     "title": "안개 낀 협곡",
     "squads": [
-      { "teamFlag": 0, "archerCount": 12, "warriorCount": 8, "knightCount": 4, "spawnX": 1000, "spawnY": 1000 },
-      { "teamFlag": 0, "archerCount": 0, "warriorCount": 16, "knightCount": 0, "spawnX": 1000, "spawnY": 2200 },
       { "teamFlag": 1, "archerCount": 8, "warriorCount": 14, "knightCount": 2, "spawnX": 5400, "spawnY": 800 },
       { "teamFlag": 1, "archerCount": 8, "warriorCount": 14, "knightCount": 2, "spawnX": 5400, "spawnY": 2400 }
     ]
@@ -21,8 +16,6 @@
     "id": 3,
     "title": "무너진 성문",
     "squads": [
-      { "teamFlag": 0, "archerCount": 20, "warriorCount": 10, "knightCount": 10, "spawnX": 800, "spawnY": 1600 },
-      { "teamFlag": 0, "archerCount": 0, "warriorCount": 25, "knightCount": 15, "spawnX": 1600, "spawnY": 1600 },
       { "teamFlag": 1, "archerCount": 30, "warriorCount": 0, "knightCount": 0, "spawnX": 6000, "spawnY": 1600 },
       { "teamFlag": 1, "archerCount": 0, "warriorCount": 40, "knightCount": 20, "spawnX": 4800, "spawnY": 1000 },
       { "teamFlag": 1, "archerCount": 0, "warriorCount": 40, "knightCount": 20, "spawnX": 4800, "spawnY": 2200 }

@@ -3,14 +3,22 @@ import { PACKET_DATA_JSON_SCHEMA, packetDataToBuffer } from "../../(lib)/_packet
 
 export const runtime = "nodejs";
 
-const DEFAULT_MODEL = "gpt-5-nano";
+const DEFAULT_MODEL = "gpt-5-mini";
 const MAX_MESSAGE_LENGTH = 4_000;
 const MAX_GAME_STATE_LENGTH = 200_000;
+const DISALLOWED_AI_PACKET_TYPES = new Set<string>(["CREATE_SQUAD", "SET_ATTACK_DAMAGE"]);
+
+const AI_PACKET_DATA_JSON_SCHEMA = {
+  anyOf: PACKET_DATA_JSON_SCHEMA.anyOf.filter((variant) => {
+    if (!("properties" in variant)) return true;
+    return !DISALLOWED_AI_PACKET_TYPES.has(variant.properties.packetType.enum[0]);
+  }),
+} as const;
 
 const GAME_COMMAND_RESPONSE_SCHEMA = {
   type: "object",
   properties: {
-    packetData: PACKET_DATA_JSON_SCHEMA,
+    packetData: AI_PACKET_DATA_JSON_SCHEMA,
     message: { type: "string" },
   },
   required: ["packetData", "message"],
@@ -18,26 +26,34 @@ const GAME_COMMAND_RESPONSE_SCHEMA = {
 } as const;
 
 const INSTRUCTIONS = `
-당신은 CLIENT_PACKET_SPEC V9 전략 게임의 명령 변환기입니다.
+당신은 CLIENT_PACKET_SPEC V11 전략 게임의 명령 변환기입니다.
 입력은 userMessage와 현재 gameState가 들어 있는 JSON입니다.
 사용자의 자연어 명령을 실행 가능한 단 하나의 packetData로 변환하고, 짧은 한국어 안내 message를 작성하세요.
 
 사용 가능한 packetType:
-- CREATE_SQUAD: archerCount, warriorCount, knightCount, teamFlag, spawnX, spawnY
 - MOVE_SQUAD: squadID, teamFlag, destinationX, destinationY
 - ATTACK_SQUAD: squadID, teamFlag
 - TRANSFER_SOLDIER: teamFlag, soldierID, currentSquadID, nextSquadID
 - STOP_SQUAD: teamFlag, squadID
 - SWAP_SOLDIER_POSITION: teamFlag, squadID, firstSoldierID, secondSoldierID
 - FOCUS_ATTACK: ownTeamFlag, ownSquadID, targetTeamFlag, targetSquadID
-- SET_ATTACK_DAMAGE: teamFlag, squadID, soldierID, attackDamage
+- MOVE_ENGAGE_ON_SIGHT: teamFlag, squadID, destinationX, destinationY
+- MOVE_FIRE_IN_RANGE: teamFlag, squadID, destinationX, destinationY
+
+gameState.allySquads는 플레이어가 출정 준비 화면에서 직접 이름 붙인 아군 스쿼드 목록이며 각 항목은 teamFlag, squadID, name, warriorCount, archerCount, knightCount를 가집니다.
 
 규칙:
 - 아군 teamFlag는 0, 적군 teamFlag는 1입니다.
+- 사용자가 스쿼드를 번호가 아니라 이름으로 부르면 gameState.allySquads에서 name이 일치하는 항목을 찾아 그 squadID와 teamFlag를 사용하세요.
+- 이름이 정확히 일치하지 않아도 사용자의 표현이 특정 name 하나만 가리키는 것이 분명하면 그 스쿼드로 판단하세요. 두 개 이상에 해당하거나 어느 것인지 알 수 없으면 packetData를 null로 반환하고 어떤 스쿼드인지 되물으세요.
+- allySquads에 없는 이름을 임의의 squadID로 추측하지 마세요.
 - squadID는 팀마다 독립적이므로 항상 teamFlag와 함께 판단하세요.
 - soldierID도 반드시 teamFlag와 squadID 안에서 판단하세요.
 - 맵 크기는 6400×3200이고 MOVE 좌표 범위는 X 0..6399, Y 0..3199입니다. 음수와 X=6400, Y=3200은 좌표로 사용할 수 없습니다.
-- CREATE 좌표 범위는 X 4..6395, Y 4..3195이고 전체 병력은 1..200명입니다.
+- CREATE_SQUAD와 SET_ATTACK_DAMAGE는 AI가 사용할 수 없습니다. 사용자가 요청하면 packetData를 null로 반환하고 지원하지 않는 명령이라고 안내하세요.
+- MOVE_ENGAGE_ON_SIGHT는 목적지로 이동하다 시야 내 적을 발견하면 목적지를 포기하고 일반 추격 공격으로 전환합니다.
+- MOVE_FIRE_IN_RANGE는 목적지로 계속 이동하면서 현재 공격 사거리 안의 적만 공격하고 적을 추격하지 않습니다.
+- MOVE_FIRE_IN_RANGE가 목적지에 도착하면 IDLE로 끝나며 자동 공격을 유지하지 않습니다.
 - 사용자가 명령에 필요한 팀, 스쿼드, 병력 수 또는 좌표를 생략했고 gameState만으로 하나를 확정할 수 없으면 packetData를 null로 반환하세요.
 - gameState에 존재하지 않는 스쿼드나 병사를 임의로 만들지 마세요.
 - 한 응답에는 가장 핵심적인 명령 하나만 반환하세요.
@@ -72,6 +88,13 @@ function parseModelOutput(outputText: string) {
   }
 
   if (result.packetData !== null) {
+    if (typeof result.packetData !== "object" || Array.isArray(result.packetData)) {
+      throw new TypeError("OpenAI 응답의 packetData가 올바르지 않습니다.");
+    }
+    const packetType = (result.packetData as Record<string, unknown>).packetType;
+    if (typeof packetType === "string" && DISALLOWED_AI_PACKET_TYPES.has(packetType)) {
+      throw new TypeError(`${packetType}은 AI가 사용할 수 없는 명령입니다.`);
+    }
     packetDataToBuffer(result.packetData);
   }
 

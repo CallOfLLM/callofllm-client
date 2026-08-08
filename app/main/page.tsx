@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import CommandHeader from "../_components/CommandHeader";
 
 const menus = [
@@ -20,11 +21,20 @@ const menus = [
     title: "부대 설비",
     description: "관리할 부대 시설을 선택합니다.",
   },
+
+  {
+    href: "/main",
+    eyebrow: "ONLINE",
+    title: "온라인 대전",
+    description: "온라인으로 상대와 전략을 다툽니다 (준비중입니다.)",
+  },
 ];
 
 export default function Page() {
   return (
-    <main className="min-h-dvh bg-slate-950 text-white">
+    <main className="relative isolate min-h-dvh bg-slate-950 text-white">
+      <Image src={"/bg/main.webp"} fill priority className="-z-10 object-cover object-top" alt="" />
+
       <CommandHeader />
 
       <section className="mx-auto max-w-7xl px-6 py-10">
@@ -39,7 +49,7 @@ export default function Page() {
             <Link
               key={menu.href}
               href={menu.href}
-              className="min-h-48 rounded-xl border border-white/10 bg-white/5 p-5 transition hover:-translate-y-1 hover:border-sky-400/50 hover:bg-sky-400/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
+              className="min-h-48 rounded-xl border border-white/10 bg-black/40 p-5 transition hover:-translate-y-1 hover:border-sky-400/50 hover:bg-sky-400/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
             >
               <span className="text-sm font-semibold text-sky-400">{menu.eyebrow}</span>
               <h2 className="mt-5 text-xl font-bold text-white">{menu.title}</h2>

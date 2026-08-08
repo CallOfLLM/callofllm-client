@@ -1,8 +1,8 @@
-// CLIENT_PACKET_SPEC.md 프로토콜 V9 기준 바이너리 직렬화/역직렬화
+// CLIENT_PACKET_SPEC_V11.md 기준 바이너리 직렬화/역직렬화
 
-export const PROTOCOL_VERSION = 9;
+export const PROTOCOL_VERSION = 11;
 export const HEADER_SIZE = 8;
-export const SOLDIER_SIZE = 28;
+export const SOLDIER_SIZE = 32;
 export const MAX_SQUAD_SIZE = 200;
 
 export const MAP_BOUNDS = {
@@ -36,6 +36,21 @@ export const SOLDIER_STATE = {
   FORMING: 6,
 } as const;
 
+export type SoldierState = (typeof SOLDIER_STATE)[keyof typeof SOLDIER_STATE];
+
+export const SOLDIER_DIRECTION = {
+  POSITIVE_X: 0,
+  POSITIVE_X_POSITIVE_Y: 1,
+  POSITIVE_Y: 2,
+  NEGATIVE_X_POSITIVE_Y: 3,
+  NEGATIVE_X: 4,
+  NEGATIVE_X_NEGATIVE_Y: 5,
+  NEGATIVE_Y: 6,
+  POSITIVE_X_NEGATIVE_Y: 7,
+} as const;
+
+export type SoldierDirection = (typeof SOLDIER_DIRECTION)[keyof typeof SOLDIER_DIRECTION];
+
 export const COMMAND_RESULT_CODE = {
   OK: 0,
   INVALID_PAYLOAD: -1,
@@ -61,10 +76,12 @@ export const PKT = {
   CS_SWAP_SOLDIER_POSITION: 5,
   CS_FOCUS_ATTACK: 6,
   CS_SET_ATTACK_DAMAGE: 7,
+  CS_MOVE_ENGAGE_ON_SIGHT: 8,
+  CS_MOVE_FIRE_IN_RANGE: 9,
   SC_SOLDIER_POSITIONS: 100,
   SC_WELCOME: 101,
-  SC_ATTACK_EVENT: 102,
-  SC_UNIT_DIED: 103,
+  SC_RESERVED_102: 102,
+  SC_RESERVED_103: 103,
   SC_COMMAND_RESULT: 104,
   SC_STAGE_STATE: 105,
 } as const;
@@ -78,10 +95,12 @@ export const PKT_NAME: Record<number, string> = {
   [PKT.CS_SWAP_SOLDIER_POSITION]: "SWAP_SOLDIER_POSITION",
   [PKT.CS_FOCUS_ATTACK]: "FOCUS_ATTACK",
   [PKT.CS_SET_ATTACK_DAMAGE]: "SET_ATTACK_DAMAGE",
+  [PKT.CS_MOVE_ENGAGE_ON_SIGHT]: "MOVE_ENGAGE_ON_SIGHT",
+  [PKT.CS_MOVE_FIRE_IN_RANGE]: "MOVE_FIRE_IN_RANGE",
   [PKT.SC_SOLDIER_POSITIONS]: "SOLDIER_POSITIONS",
   [PKT.SC_WELCOME]: "WELCOME",
-  [PKT.SC_ATTACK_EVENT]: "ATTACK_EVENT",
-  [PKT.SC_UNIT_DIED]: "UNIT_DIED",
+  [PKT.SC_RESERVED_102]: "RESERVED_102",
+  [PKT.SC_RESERVED_103]: "RESERVED_103",
   [PKT.SC_COMMAND_RESULT]: "COMMAND_RESULT",
   [PKT.SC_STAGE_STATE]: "STAGE_STATE",
 };
@@ -133,6 +152,20 @@ export type PacketData =
       squadID: number;
       soldierID: number;
       attackDamage: number;
+    }
+  | {
+      packetType: "MOVE_ENGAGE_ON_SIGHT";
+      teamFlag: TeamFlag;
+      squadID: number;
+      destinationX: number;
+      destinationY: number;
+    }
+  | {
+      packetType: "MOVE_FIRE_IN_RANGE";
+      teamFlag: TeamFlag;
+      squadID: number;
+      destinationX: number;
+      destinationY: number;
     };
 
 const TEAM_FLAG_SCHEMA = { type: "integer", enum: [TEAM_FLAG.ALLY, TEAM_FLAG.ENEMY] } as const;
@@ -233,6 +266,30 @@ export const PACKET_DATA_JSON_SCHEMA = {
         attackDamage: { type: "integer", minimum: 1, maximum: 0x7fffffff },
       },
       required: ["packetType", "teamFlag", "squadID", "soldierID", "attackDamage"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: {
+        packetType: { type: "string", enum: ["MOVE_ENGAGE_ON_SIGHT"] },
+        teamFlag: TEAM_FLAG_SCHEMA,
+        squadID: ID_SCHEMA,
+        destinationX: { type: "integer", minimum: MAP_BOUNDS.minX, maximum: MAP_BOUNDS.maxX },
+        destinationY: { type: "integer", minimum: MAP_BOUNDS.minY, maximum: MAP_BOUNDS.maxY },
+      },
+      required: ["packetType", "teamFlag", "squadID", "destinationX", "destinationY"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: {
+        packetType: { type: "string", enum: ["MOVE_FIRE_IN_RANGE"] },
+        teamFlag: TEAM_FLAG_SCHEMA,
+        squadID: ID_SCHEMA,
+        destinationX: { type: "integer", minimum: MAP_BOUNDS.minX, maximum: MAP_BOUNDS.maxX },
+        destinationY: { type: "integer", minimum: MAP_BOUNDS.minY, maximum: MAP_BOUNDS.maxY },
+      },
+      required: ["packetType", "teamFlag", "squadID", "destinationX", "destinationY"],
       additionalProperties: false,
     },
     { type: "null" },
@@ -355,7 +412,25 @@ export function setAttackDamage(teamFlag: TeamFlag, squadID: number, soldierID: 
   return build(PKT.CS_SET_ATTACK_DAMAGE, [teamFlag, squadID, soldierID, attackDamage]);
 }
 
-/** API가 반환한 PacketData를 검증하면서 V9 바이너리 패킷으로 변환한다. */
+/** Type 8, 24 bytes — 이동 중 적을 발견하면 목적지를 포기하고 일반 공격으로 전환한다. */
+export function moveEngageOnSight(teamFlag: TeamFlag, squadID: number, destinationX: number, destinationY: number): ArrayBuffer {
+  assertTeamFlag(teamFlag);
+  assertID("squadID", squadID);
+  assertIntegerInRange("destinationX", destinationX, MAP_BOUNDS.minX, MAP_BOUNDS.maxX);
+  assertIntegerInRange("destinationY", destinationY, MAP_BOUNDS.minY, MAP_BOUNDS.maxY);
+  return build(PKT.CS_MOVE_ENGAGE_ON_SIGHT, [teamFlag, squadID, destinationX, destinationY]);
+}
+
+/** Type 9, 24 bytes — 이동을 계속하면서 현재 공격 사거리 안의 적만 공격한다. */
+export function moveFireInRange(teamFlag: TeamFlag, squadID: number, destinationX: number, destinationY: number): ArrayBuffer {
+  assertTeamFlag(teamFlag);
+  assertID("squadID", squadID);
+  assertIntegerInRange("destinationX", destinationX, MAP_BOUNDS.minX, MAP_BOUNDS.maxX);
+  assertIntegerInRange("destinationY", destinationY, MAP_BOUNDS.minY, MAP_BOUNDS.maxY);
+  return build(PKT.CS_MOVE_FIRE_IN_RANGE, [teamFlag, squadID, destinationX, destinationY]);
+}
+
+/** API가 반환한 PacketData를 검증하면서 V11 바이너리 패킷으로 변환한다. */
 export function packetDataToBuffer(packetData: unknown): ArrayBuffer {
   if (typeof packetData !== "object" || packetData === null || Array.isArray(packetData)) {
     throw new TypeError("packetData는 게임 명령 JSON 객체여야 합니다.");
@@ -386,6 +461,10 @@ export function packetDataToBuffer(packetData: unknown): ArrayBuffer {
       return focusAttack(data.ownTeamFlag as TeamFlag, data.ownSquadID as number, data.targetTeamFlag as TeamFlag, data.targetSquadID as number);
     case "SET_ATTACK_DAMAGE":
       return setAttackDamage(data.teamFlag as TeamFlag, data.squadID as number, data.soldierID as number, data.attackDamage as number);
+    case "MOVE_ENGAGE_ON_SIGHT":
+      return moveEngageOnSight(data.teamFlag as TeamFlag, data.squadID as number, data.destinationX as number, data.destinationY as number);
+    case "MOVE_FIRE_IN_RANGE":
+      return moveFireInRange(data.teamFlag as TeamFlag, data.squadID as number, data.destinationX as number, data.destinationY as number);
     default:
       throw new TypeError(`지원하지 않는 packetType입니다. (현재: ${String(data.packetType)})`);
   }
@@ -394,11 +473,13 @@ export function packetDataToBuffer(packetData: unknown): ArrayBuffer {
 export interface Soldier {
   squadID: number;
   soldierID: number;
-  teamFlag: number;
+  teamFlag: TeamFlag;
   posX: number;
   posY: number;
   hp: number;
-  state: number;
+  state: SoldierState;
+  /** V11은 0..7을 사용하지만 V13 서버는 더 큰 방향값도 전송하므로 원시 int32로 보관한다. */
+  direction: number;
 }
 
 export interface SoldierSnapshot {
@@ -414,30 +495,8 @@ export interface WelcomePacket {
   protocolVersion: number;
   sessionID: number;
   serverTickMs: number;
-}
-
-export interface AttackEventPacket {
-  pktType: typeof PKT.SC_ATTACK_EVENT;
-  pktLen: number;
-  attackerTeamFlag: number;
-  attackerSquadID: number;
-  attackerSoldierID: number;
-  targetTeamFlag: number;
-  targetSquadID: number;
-  targetSoldierID: number;
-  appliedDamage: number;
-  targetHP: number;
-}
-
-export interface UnitDiedPacket {
-  pktType: typeof PKT.SC_UNIT_DIED;
-  pktLen: number;
-  deadTeamFlag: number;
-  deadSquadID: number;
-  deadSoldierID: number;
-  killerTeamFlag: number;
-  killerSquadID: number;
-  killerSoldierID: number;
+  /** V12 WELCOME에 추가된 값. 정확한 의미는 V12 명세 수신 전까지 해석하지 않는다. */
+  extraValue?: number;
 }
 
 export interface CommandResultPacket {
@@ -457,7 +516,7 @@ export interface StageStatePacket {
   aliveEnemyCount: number;
 }
 
-export type ServerPacket = SoldierSnapshot | WelcomePacket | AttackEventPacket | UnitDiedPacket | CommandResultPacket | StageStatePacket;
+export type ServerPacket = SoldierSnapshot | WelcomePacket | CommandResultPacket | StageStatePacket;
 
 function getFixedPacketView(buf: ArrayBuffer, expectedType: number, expectedLength: number): DataView | null {
   if (buf.byteLength !== expectedLength) return null;
@@ -483,21 +542,28 @@ export function parseSoldierSnapshot(buf: ArrayBuffer): SoldierSnapshot | null {
   const soldiers: Soldier[] = [];
   for (let i = 0; i < soldierCount; i++) {
     const offset = BODY_OFFSET + i * SOLDIER_SIZE;
+    const teamFlag = view.getInt32(offset + 8, LITTLE_ENDIAN);
+    const state = view.getInt32(offset + 24, LITTLE_ENDIAN);
+    const direction = view.getInt32(offset + 28, LITTLE_ENDIAN);
+    if (teamFlag < TEAM_FLAG.ALLY || teamFlag > TEAM_FLAG.ENEMY) return null;
+    if (state < SOLDIER_STATE.IDLE || state > SOLDIER_STATE.FORMING) return null;
+
     soldiers.push({
       squadID: view.getInt32(offset, LITTLE_ENDIAN),
       soldierID: view.getInt32(offset + 4, LITTLE_ENDIAN),
-      teamFlag: view.getInt32(offset + 8, LITTLE_ENDIAN),
+      teamFlag: teamFlag as TeamFlag,
       posX: view.getInt32(offset + 12, LITTLE_ENDIAN),
       posY: view.getInt32(offset + 16, LITTLE_ENDIAN),
       hp: view.getInt32(offset + 20, LITTLE_ENDIAN),
-      state: view.getInt32(offset + 24, LITTLE_ENDIAN),
+      state: state as SoldierState,
+      direction,
     });
   }
 
   return { pktType, pktLen, soldierCount, soldiers };
 }
 
-/** V9 서버 패킷(Type 100~105)을 판별하고 고정 레이아웃과 길이를 검증한다. */
+/** V11 활성 서버 패킷(Type 100, 101, 104, 105)을 판별하고 길이를 검증한다. */
 export function parseServerPacket(buf: ArrayBuffer): ServerPacket | null {
   if (buf.byteLength < HEADER_SIZE) return null;
 
@@ -509,46 +575,15 @@ export function parseServerPacket(buf: ArrayBuffer): ServerPacket | null {
   if (pktType === PKT.SC_SOLDIER_POSITIONS) return parseSoldierSnapshot(buf);
 
   if (pktType === PKT.SC_WELCOME) {
-    const view = getFixedPacketView(buf, PKT.SC_WELCOME, 20);
-    if (!view) return null;
+    if (buf.byteLength !== 20 && buf.byteLength !== 24) return null;
+    const view = new DataView(buf);
     return {
       pktType: PKT.SC_WELCOME,
       pktLen,
       protocolVersion: view.getInt32(8, LITTLE_ENDIAN),
       sessionID: view.getInt32(12, LITTLE_ENDIAN),
       serverTickMs: view.getInt32(16, LITTLE_ENDIAN),
-    };
-  }
-
-  if (pktType === PKT.SC_ATTACK_EVENT) {
-    const view = getFixedPacketView(buf, PKT.SC_ATTACK_EVENT, 40);
-    if (!view) return null;
-    return {
-      pktType: PKT.SC_ATTACK_EVENT,
-      pktLen,
-      attackerTeamFlag: view.getInt32(8, LITTLE_ENDIAN),
-      attackerSquadID: view.getInt32(12, LITTLE_ENDIAN),
-      attackerSoldierID: view.getInt32(16, LITTLE_ENDIAN),
-      targetTeamFlag: view.getInt32(20, LITTLE_ENDIAN),
-      targetSquadID: view.getInt32(24, LITTLE_ENDIAN),
-      targetSoldierID: view.getInt32(28, LITTLE_ENDIAN),
-      appliedDamage: view.getInt32(32, LITTLE_ENDIAN),
-      targetHP: view.getInt32(36, LITTLE_ENDIAN),
-    };
-  }
-
-  if (pktType === PKT.SC_UNIT_DIED) {
-    const view = getFixedPacketView(buf, PKT.SC_UNIT_DIED, 32);
-    if (!view) return null;
-    return {
-      pktType: PKT.SC_UNIT_DIED,
-      pktLen,
-      deadTeamFlag: view.getInt32(8, LITTLE_ENDIAN),
-      deadSquadID: view.getInt32(12, LITTLE_ENDIAN),
-      deadSoldierID: view.getInt32(16, LITTLE_ENDIAN),
-      killerTeamFlag: view.getInt32(20, LITTLE_ENDIAN),
-      killerSquadID: view.getInt32(24, LITTLE_ENDIAN),
-      killerSoldierID: view.getInt32(28, LITTLE_ENDIAN),
+      extraValue: buf.byteLength === 24 ? view.getInt32(20, LITTLE_ENDIAN) : undefined,
     };
   }
 

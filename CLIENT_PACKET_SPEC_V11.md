@@ -1,23 +1,32 @@
-# 클라이언트 구현용 통신 및 패킷 명세
+# 클라이언트 구현용 통신 및 패킷 명세 — Protocol V11
 
 이 문서는 현재 서버 소스의 실제 동작을 기준으로 작성한 클라이언트 구현 명세다.
 
-- 현재 프로토콜 버전: `9`
+- 현재 프로토콜 버전: `11`
 - 전송 방식: WebSocket binary frame
 - 서버 포트: `9000`
-- 서버 simulation tick: `40Hz` (`25ms`)
-- 상태 snapshot 전송 주기: `40Hz` (`25ms`)
+- 서버 simulation tick: `50Hz` (`20ms`, `0.02초`)
+- 상태 snapshot 전송 주기: `50Hz` (`20ms`, `0.02초`)
 - 멀티세션 방식: WebSocket 연결 하나마다 서로 완전히 독립된 게임 하나
 
-서버는 연결 직후 Type 101 WELCOME으로 프로토콜 버전 `9`를 전송한다. 버전이 다른 클라이언트는 명령 패킷을 보내면 안 된다.
+서버는 연결 직후 Type 101 WELCOME으로 프로토콜 버전 `11`을 전송한다. 버전이 다른 클라이언트는 명령 패킷을 보내면 안 된다.
 
-V9 핵심 변경:
+V11 핵심 변경:
 
-- Type 100 좌표 snapshot 레이아웃은 V8과 동일하다.
-- Type 101~105 송신이 모두 활성화됐다.
-- Type 102·103은 팀별로 중복될 수 있는 squad ID를 구분하기 위해 공격자·피격자·사망자·처치자의 `teamFlag`를 포함한다.
+- Type 100 Soldier record 끝에 8방향 `direction`을 추가해 record 크기가 28바이트에서 32바이트로 변경됐다.
+- Type 8 `MOVE_ENGAGE_ON_SIGHT`와 Type 9 `MOVE_FIRE_IN_RANGE` 이동 전투 명령을 추가했다.
+- 게임 simulation과 Type 100 snapshot 전송을 모두 0.02초 간격(50Hz)으로 통일했다.
+- Type 101 WELCOME, Type 104 COMMAND_RESULT, Type 105 STAGE_STATE 송신이 활성화됐다.
+- Type 102 ATTACK_EVENT와 Type 103 UNIT_DIED는 웹 클라이언트의 이벤트 처리량을 줄이기 위해 예약 번호만 유지하고 송신하지 않는다.
 - Type 104로 모든 식별 가능한 클라이언트 명령의 성공·실패 결과를 전송한다.
 - Type 105는 스테이지 상태 또는 양 팀 생존 인원이 바뀔 때 전송한다.
+
+V11 서버 최적화 반영 사항(패킷 호환성 유지):
+
+- `PROTOCOL_VERSION`, 활성 패킷의 type, `pkt_len`, 필드 offset, enum 값, 50Hz 전송 주기는 변경되지 않았다.
+- 따라서 이미 V11을 구현한 클라이언트는 패킷 코드를 변경할 필요가 없다.
+- 서버 내부의 공간 인덱스, 정지 장애물 Grid, JPS 탐색 메모리, 충돌 해결 버퍼, 세션 조회 및 WebSocket 송신 버퍼를 재사용하도록 최적화했다.
+- 여러 정지 스쿼드가 동일 목적지를 이미 둘러싼 특수 혼잡 상황에서만 마지막 도착 스쿼드의 내부 응집 허용 반경을 45로 사용한다. 일반 도착 응집 반경 36과 단일 점유 스쿼드 외곽 정지 규칙은 그대로다.
 
 ---
 
@@ -38,7 +47,7 @@ HTTPS 페이지에서 Cloudflare Tunnel을 통해 접속할 때는 브라우저�
 ### 1.2 연결 수명주기
 
 1. WebSocket 핸드셰이크가 완료되면 서버가 해당 연결 전용 빈 `GameInstance`를 생성한다.
-2. 약 25ms 주기로 Type 100 snapshot을 보내며, 아직 병사가 없으면 `soldierCount = 0`이다.
+2. 약 20ms 주기로 Type 100 snapshot을 보내며, 아직 병사가 없으면 `soldierCount = 0`이다.
 3. 클라이언트가 명령 패킷을 보내면 그 연결이 소유한 게임에만 적용된다.
 4. 연결이 끊기면 해당 게임의 모든 스쿼드와 병사가 삭제된다.
 5. 재접속은 새 게임으로 취급되며 이전 `squadID`, `soldierID`, 전투 상태는 복원되지 않는다.
@@ -175,6 +184,23 @@ Type 100의 `state`는 클라이언트 애니메이션에 사용하는 현재 �
 - `HIT`와 `DEAD`는 이전 이동·공격 상태보다 우선한다.
 - 현재 snapshot에는 내부 `action` 값이 없으므로 클라이언트가 스쿼드별 마지막 명령을 별도로 기억해야 한다.
 
+### 4.5 `Direction`
+
+Type 100의 `direction`은 병사의 마지막 실제 이동 방향 또는 현재 공격 대상 방향이다. 정지 중에는 마지막 방향을 유지한다.
+
+| 값 | 방향 벡터 | 의미 |
+|---:|---|---|
+| 0 | `(+X, 0)` | 오른쪽 |
+| 1 | `(+X, +Y)` | 오른쪽 아래/위 대각선(클라이언트 Y축 표현에 따름) |
+| 2 | `(0, +Y)` | +Y |
+| 3 | `(-X, +Y)` | 왼쪽 +Y 대각선 |
+| 4 | `(-X, 0)` | 왼쪽 |
+| 5 | `(-X, -Y)` | 왼쪽 -Y 대각선 |
+| 6 | `(0, -Y)` | -Y |
+| 7 | `(+X, -Y)` | 오른쪽 -Y 대각선 |
+
+클라이언트가 화면 좌표에서 Y축을 반대로 표시한다면 위·아래 표현만 뒤집고 숫자 값은 그대로 사용한다. 충돌 보정으로 실제 이동 방향이 바뀌면 서버는 보정이 끝난 방향을 전송한다. `ATTACKING`에서는 이동하지 않더라도 공격 대상을 바라보도록 갱신된다.
+
 ---
 
 ## 5. 패킷 목록
@@ -191,21 +217,23 @@ Type 100의 `state`는 클라이언트 애니메이션에 사용하는 현재 �
 | 5 | `SWAP_SOLDIER_POSITION` | 24 | STOP 스쿼드 안의 두 병사 자리 맞교환 |
 | 6 | `FOCUS_ATTACK` | 24 | 팀까지 지정한 적 스쿼드만 추적하고 공격 |
 | 7 | `SET_ATTACK_DAMAGE` | 24 | 특정 생존 병사의 공격력을 전달한 값으로 설정 |
+| 8 | `MOVE_ENGAGE_ON_SIGHT` | 24 | 목적지로 이동하다 시야 내 적 발견 시 일반 추격 공격으로 전환 |
+| 9 | `MOVE_FIRE_IN_RANGE` | 24 | 이동 중 사거리 안 적만 공격하고 쿨타임에는 목적지 이동 계속 |
 
 ### Server → Client
 
 | Type | 이름 | 전체 길이 | 기능 |
 |---:|---|---:|---|
-| 100 | `SOLDIER_POSITIONS` | `12 + soldierCount × 28` | 현재 게임의 모든 병사 좌표·HP·state snapshot |
+| 100 | `SOLDIER_POSITIONS` | `12 + soldierCount × 32` | 현재 게임의 모든 병사 좌표·HP·state·direction snapshot |
 | 101 | `WELCOME` | 20 | 프로토콜·세션·서버 틱 정보 |
-| 102 | `ATTACK_EVENT` | 40 | 실제 타격과 적용 피해량 |
-| 103 | `UNIT_DIED` | 32 | 사망 병사와 처치자 |
+| 102 | 예약, 송신 안 함 | - | Type 100의 HP/state로 통합 |
+| 103 | 예약, 송신 안 함 | - | Type 100의 HP/state로 통합 |
 | 104 | `COMMAND_RESULT` | 24 | 클라이언트 명령 성공·실패 결과 |
 | 105 | `STAGE_STATE` | 20 | 승패 상태와 양 팀 생존 인원 |
 
-서버는 Type 100~105를 모두 전송한다.
+서버가 실제로 전송하는 타입은 100, 101, 104, 105다. 102와 103은 번호 충돌 방지를 위해 예약만 유지한다.
 
-클라이언트 수신기는 WebSocket binary frame마다 먼저 공통 헤더의 `pkt_type`을 읽고 위 여섯 타입으로 분기해야 한다. Type 100만 도착한다고 가정하면 WELCOME이나 COMMAND_RESULT를 snapshot으로 잘못 해석하게 된다.
+클라이언트 수신기는 WebSocket binary frame마다 먼저 공통 헤더의 `pkt_type`을 읽고 활성 네 타입으로 분기해야 한다. Type 100만 도착한다고 가정하면 WELCOME이나 COMMAND_RESULT를 snapshot으로 잘못 해석하게 된다. 102와 103 처리 코드는 필요 없다.
 
 ---
 
@@ -268,6 +296,7 @@ Type 100의 `state`는 클라이언트 애니메이션에 사용하는 현재 �
 - 이동 중에는 정밀 진형을 강제하지 않고 느슨한 군집으로 이동한다.
 - 정지 스쿼드는 동적 장애물로 우회하고, 동시에 이동하는 스쿼드는 국소 회피와 충돌 해결을 사용한다.
 - 목적지에 정지 스쿼드가 있으면 요청 좌표에 겹치지 않고 해당 스쿼드 외곽의 안전 지점에서 정지할 수 있다.
+- 서로 다른 정지 스쿼드가 둘 이상 동일 목적지를 둘러싼 경우, 마지막 스쿼드는 목적지 주변에서 충분히 응집하면 미세 이동을 반복하지 않고 정지한다. 이 혼잡 전용 응집 반경은 45이며 일반 도착에는 적용하지 않는다.
 - 도착 후 현재 배치 그대로 `IDLE`이 되며 자동 진형 정렬은 하지 않는다.
 - MOVE는 기존 일반/집중 공격 대상을 해제하고 이동 행동으로 전환한다.
 
@@ -299,7 +328,7 @@ Type 100의 `state`는 클라이언트 애니메이션에 사용하는 현재 �
 - 적이 없으면 state는 `IDLE`이지만 ATTACK 명령은 유지되므로, 이후 적이 시야에 들어오면 자동으로 공격을 시작한다.
 - STOP 또는 MOVE 같은 다른 명령을 받을 때까지 자동 공격 행동을 유지한다.
 
-피해량, 공격 간격과 사거리는 4.3의 병종 표를 따른다. 실제 타격은 Type 102, 사망은 Type 103으로 즉시 알리고 Type 100에도 최종 HP와 state가 반영된다.
+피해량, 공격 간격과 사거리는 4.3의 병종 표를 따른다. 실제 타격 결과는 다음 Type 100의 HP 변화로, 사망은 `HP=0`, `state=DEAD(4)`로 확인한다. 별도 공격·사망 이벤트는 전송하지 않는다.
 
 ---
 
@@ -472,30 +501,81 @@ Type 104 성공 응답 후 다음 Type 100에서 두 `(teamFlag, squadID, soldie
 
 ---
 
-## 14. SOLDIER_POSITIONS — Type 100
+## 14. MOVE_ENGAGE_ON_SIGHT — Type 8
 
-해당 WebSocket 연결이 소유한 게임의 모든 병사를 약 40Hz로 전송하는 authoritative snapshot이다.
+목적지로 이동하면서 일반 시야 반경 300 안의 적을 탐색한다. 스쿼드 병사 중 한 명이라도 적을 발견하면 이동 목적지를 포기하고 스쿼드 전체가 기존 Type 2와 같은 일반 추격 공격으로 전환한다.
 
-### 14.1 전체 레이아웃
+### 14.1 레이아웃
+
+| Offset | Size | Type | Field | 허용 값과 의미 |
+|---:|---:|---|---|---|
+| 0 | 4 | `int32` | `pkt_type` | 항상 `8` |
+| 4 | 4 | `int32` | `pkt_len` | 항상 `24` |
+| 8 | 4 | `int32` | `teamFlag` | 대상 팀, `0=ALLY`, `1=ENEMY` |
+| 12 | 4 | `uint32` | `squadID` | 해당 팀 안에서 명령을 받을 스쿼드 ID |
+| 16 | 4 | `int32` | `destinationX` | 목적지 X, `0..6399` |
+| 20 | 4 | `int32` | `destinationY` | 목적지 Y, `0..3199` |
+
+### 14.2 동작
+
+- 적을 발견하기 전에는 Type 1과 동일한 공용 경로·충돌·우회 이동을 사용하며 state는 `MOVING`이다.
+- 한 병사가 적을 발견하면 모든 생존 병사가 `AC_ATK`로 전환한다.
+- 전환 이후 각 병사는 시야 내 가장 가까운 적을 선택하며, 사거리 밖이면 `CHASING`, 사거리 안이면 `ATTACKING`이 된다.
+- 전환 시 원래 목적지와 이동 경로는 취소된다. 전투가 끝난 뒤 목적지 이동을 재개하려면 클라이언트가 새 이동 명령을 보내야 한다.
+- STOP, MOVE 또는 다른 명령을 보내면 현재 행동을 교체한다.
+
+---
+
+## 15. MOVE_FIRE_IN_RANGE — Type 9
+
+목적지로 계속 이동하되, 각 병사는 자기 공격 사거리 안에 이미 들어온 적만 공격한다. 적을 추적하거나 원래 경로를 적 위치로 바꾸지 않는다.
+
+### 15.1 레이아웃
+
+| Offset | Size | Type | Field | 허용 값과 의미 |
+|---:|---:|---|---|---|
+| 0 | 4 | `int32` | `pkt_type` | 항상 `9` |
+| 4 | 4 | `int32` | `pkt_len` | 항상 `24` |
+| 8 | 4 | `int32` | `teamFlag` | 대상 팀, `0=ALLY`, `1=ENEMY` |
+| 12 | 4 | `uint32` | `squadID` | 해당 팀 안에서 명령을 받을 스쿼드 ID |
+| 16 | 4 | `int32` | `destinationX` | 목적지 X, `0..6399` |
+| 20 | 4 | `int32` | `destinationY` | 목적지 Y, `0..3199` |
+
+### 15.2 동작
+
+- 공격 준비가 끝났고 적이 사거리 안에 있으면 그 tick에는 정지해 가장 가까운 적을 한 번 공격하며 `ATTACKING`이 된다.
+- 공격 쿨타임 중에는 적을 따라가지 않고 원래 스쿼드 목적지를 향해 계속 이동하며 `MOVING`이 된다.
+- 궁수·전사·기사별 공격 사거리와 쿨타임은 4.3 표의 값을 사용한다.
+- 이 명령에서는 `CHASING` 상태가 발생하지 않는다.
+- 적이 시야에는 있지만 공격 사거리 밖에 있다면 무시하고 이동한다.
+- 목적지에 도착하면 현재 위치에서 `IDLE`로 끝나며, 이후 자동 공격을 유지하지 않는다.
+
+---
+
+## 16. SOLDIER_POSITIONS — Type 100
+
+해당 WebSocket 연결이 소유한 게임의 모든 병사를 0.02초 간격, 약 50Hz로 전송하는 authoritative snapshot이다.
+
+### 16.1 전체 레이아웃
 
 전체 길이 공식:
 
-`pkt_len = 12 + soldierCount × 28`
+`pkt_len = 12 + soldierCount × 32`
 
 | Offset | Size | Type | Field | 의미 |
 |---:|---:|---|---|---|
 | 0 | 4 | `int32` | `pkt_type` | 항상 `100` |
 | 4 | 4 | `int32` | `pkt_len` | 이 snapshot의 전체 바이트 수 |
 | 8 | 4 | `int32` | `soldierCount` | 뒤에 이어지는 Soldier record 수, 0 이상 |
-| 12 | `28 × N` | record | `soldiers` | Soldier record가 `soldierCount`회 반복 |
+| 12 | `32 × N` | record | `soldiers` | Soldier record가 `soldierCount`회 반복 |
 
 병사가 없는 정상 snapshot은 `pkt_type=100`, `pkt_len=12`, `soldierCount=0`이다.
 
-### 14.2 Soldier record
+### 16.2 Soldier record
 
 각 record의 시작 offset은 다음과 같다.
 
-`recordStart = 12 + soldierIndex × 28`
+`recordStart = 12 + soldierIndex × 32`
 
 | Record offset | Size | Type | Field | 의미 |
 |---:|---:|---|---|---|
@@ -506,8 +586,9 @@ Type 104 성공 응답 후 다음 Type 100에서 두 `(teamFlag, squadID, soldie
 | 16 | 4 | `int32` | `posY` | 현재 월드 Y 좌표 |
 | 20 | 4 | `int32` | `HP` | 현재 체력, 사망 시 0 |
 | 24 | 4 | `int32` | `state` | 4.4의 `SoldierState` 값 |
+| 28 | 4 | `int32` | `direction` | 4.5의 8방향 값 |
 
-### 14.3 처리 규칙
+### 16.3 처리 규칙
 
 - snapshot에는 살아 있는 병사와 죽은 병사가 모두 포함된다.
 - 죽은 병사는 `HP=0`, `state=DEAD(4)`로 계속 포함된다.
@@ -515,10 +596,10 @@ Type 104 성공 응답 후 다음 Type 100에서 두 `(teamFlag, squadID, soldie
 - 항상 `(teamFlag, squadID, soldierID)`를 key로 사용한다.
 - 편입 시 두 key가 모두 바뀔 수 있으므로 이전 key가 사라지고 대상 스쿼드에 새 key가 생긴다.
 - 클라이언트는 수신할 때 `pkt_len == 실제 frame payload 길이`인지 확인해야 한다.
-- 클라이언트는 `실제 frame payload 길이 == 12 + soldierCount × 28`인지도 확인해야 한다.
+- 클라이언트는 `실제 frame payload 길이 == 12 + soldierCount × 32`인지도 확인해야 한다.
 - 서버 좌표가 authoritative하므로 화면 이동은 연속 snapshot 사이를 보간해 표현하는 것을 권장한다.
 
-### 14.4 현재 포함되지 않는 정보
+### 16.4 현재 포함되지 않는 정보
 
 Type 100에는 다음 값이 없다.
 
@@ -533,7 +614,7 @@ Type 100에는 다음 값이 없다.
 
 ---
 
-## 15. 명령별 state 흐름
+## 17. 명령별 state 흐름
 
 | 마지막 명령/상황 | 일반적인 state 흐름 |
 |---|---|
@@ -549,12 +630,14 @@ Type 100에는 다음 값이 없다.
 | STOP | `IDLE` 또는 남은 피격 경직 동안 잠시 `HIT → IDLE` |
 | SWAP_SOLDIER_POSITION | 계속 `IDLE`, 두 병사 좌표만 교환 |
 | SET_ATTACK_DAMAGE | 현재 state 유지, 다음 실제 타격부터 설정한 공격력 적용 |
+| MOVE_ENGAGE_ON_SIGHT | `MOVING → CHASING/ATTACKING`, 발견 후 원래 목적지 취소 |
+| MOVE_FIRE_IN_RANGE | 평소 `MOVING`, 실제 타격 tick에만 `ATTACKING`, `CHASING` 없음 |
 
 state만으로 장기 명령을 역추론하면 안 된다. 예를 들어 `IDLE`은 STOP뿐 아니라 “ATTACK 중이지만 적 없음”도 의미한다.
 
 ---
 
-## 16. 클라이언트 상태 관리 권장사항
+## 18. 클라이언트 상태 관리 권장사항
 
 1. Type 100은 매번 현재 authoritative 상태로 적용한다.
 2. 병사 map의 key는 배열 index가 아니라 `(teamFlag, squadID, soldierID)`로 둔다.
@@ -569,7 +652,7 @@ state만으로 장기 명령을 역추론하면 안 된다. 예를 들어 `IDLE`
 
 ---
 
-## 17. WELCOME — Type 101
+## 19. WELCOME — Type 101
 
 WebSocket 핸드셰이크가 완료되고 독립 게임 인스턴스가 생성되면 한 번 전송한다.
 
@@ -577,51 +660,25 @@ WebSocket 핸드셰이크가 완료되고 독립 게임 인스턴스가 생성�
 |---:|---:|---|---|---|
 | 0 | 4 | `int32` | `pkt_type` | 항상 `101` |
 | 4 | 4 | `int32` | `pkt_len` | 항상 `20` |
-| 8 | 4 | `int32` | `protocolVersion` | 현재 `9` |
+| 8 | 4 | `int32` | `protocolVersion` | 현재 `11` |
 | 12 | 4 | `int32` | `sessionID` | 연결에 할당된 서버 세션 ID |
-| 16 | 4 | `int32` | `serverTickMs` | 고정 simulation tick, 현재 `25` |
+| 16 | 4 | `int32` | `serverTickMs` | 고정 simulation tick, 현재 `20` |
 
 ---
 
-## 18. ATTACK_EVENT — Type 102
+## 20. 예약 패킷 — Type 102
 
-실제 피해가 적용될 때마다 전송하며 전체 길이는 `40`바이트다.
-
-| Offset | Size | Type | Field | 의미 |
-|---:|---:|---|---|---|
-| 0 | 4 | `int32` | `pkt_type` | 항상 `102` |
-| 4 | 4 | `int32` | `pkt_len` | 항상 `40` |
-| 8 | 4 | `int32` | `attackerTeamFlag` | 공격자 팀 |
-| 12 | 4 | `int32` | `attackerSquadID` | 공격자 스쿼드 |
-| 16 | 4 | `int32` | `attackerSoldierID` | 공격자 병사 |
-| 20 | 4 | `int32` | `targetTeamFlag` | 피격자 팀 |
-| 24 | 4 | `int32` | `targetSquadID` | 피격자 스쿼드 |
-| 28 | 4 | `int32` | `targetSoldierID` | 피격자 병사 |
-| 32 | 4 | `int32` | `appliedDamage` | 실제 감소한 HP. 남은 HP보다 공격력이 크면 남은 HP만 기록 |
-| 36 | 4 | `int32` | `targetHP` | 피해 적용 직후 HP |
-
-모든 필드는 4바이트 `int32`이며 사망 타격에서는 Type 102가 먼저, Type 103이 다음에 온다.
+Type 102는 이전 `ATTACK_EVENT`용 번호지만 현재 서버는 송신하지 않는다. 클라이언트는 Type 100에서 이전 snapshot과 현재 snapshot의 HP 차이를 사용해 피해를 확인한다. 공격 모션은 `state=ATTACKING(3)`을 사용한다.
 
 ---
 
-## 19. UNIT_DIED — Type 103
+## 21. 예약 패킷 — Type 103
 
-병사의 HP가 처음 0이 되었을 때 한 번 전송하며 전체 길이는 `32`바이트다.
-
-| Offset | Size | Type | Field | 의미 |
-|---:|---:|---|---|---|
-| 0 | 4 | `int32` | `pkt_type` | 항상 `103` |
-| 4 | 4 | `int32` | `pkt_len` | 항상 `32` |
-| 8 | 4 | `int32` | `deadTeamFlag` | 사망 병사 팀 |
-| 12 | 4 | `int32` | `deadSquadID` | 사망 병사 스쿼드 |
-| 16 | 4 | `int32` | `deadSoldierID` | 사망 병사 ID |
-| 20 | 4 | `int32` | `killerTeamFlag` | 처치자 팀, 환경 피해면 `-1` |
-| 24 | 4 | `int32` | `killerSquadID` | 처치자 스쿼드, 없으면 `-1` |
-| 28 | 4 | `int32` | `killerSoldierID` | 처치자 병사, 없으면 `-1` |
+Type 103은 이전 `UNIT_DIED`용 번호지만 현재 서버는 송신하지 않는다. 클라이언트는 Type 100의 `HP=0`과 `state=DEAD(4)`를 사망 기준으로 사용한다. 현재 활성 패킷만으로는 처치자 정보가 제공되지 않는다.
 
 ---
 
-## 20. COMMAND_RESULT — Type 104
+## 22. COMMAND_RESULT — Type 104
 
 헤더에서 요청 타입을 판별할 수 있는 모든 클라이언트 명령에 한 번 응답한다. 전체 길이는 `24`바이트다.
 
@@ -656,12 +713,14 @@ WebSocket 핸드셰이크가 완료되고 독립 게임 인스턴스가 생성�
 | 5 SWAP | 대상 팀 | 대상 `squadID` |
 | 6 FOCUS_ATTACK | 공격 명령 팀 | `ownSquadID` |
 | 7 SET_ATTACK_DAMAGE | 대상 팀 | 대상 `squadID` |
+| 8 MOVE_ENGAGE_ON_SIGHT | 대상 팀 | 대상 `squadID` |
+| 9 MOVE_FIRE_IN_RANGE | 대상 팀 | 대상 `squadID` |
 
 고정 길이 오류처럼 payload를 해석할 수 없으면 `teamFlag=-1`, `entityID=-1`이다. 존재하지 않는 ID처럼 payload를 해석한 뒤 실패한 경우에는 가능한 범위에서 요청에 들어 있던 팀과 스쿼드 ID를 되돌려준다.
 
 ---
 
-## 21. STAGE_STATE — Type 105
+## 23. STAGE_STATE — Type 105
 
 스테이지 상태 또는 어느 팀의 생존 인원이 바뀔 때 전송한다. 전체 길이는 `20`바이트다.
 
@@ -683,7 +742,7 @@ WebSocket 핸드셰이크가 완료되고 독립 게임 인스턴스가 생성�
 
 ---
 
-## 22. 현재 프로토콜의 알려진 제약
+## 24. 현재 프로토콜의 알려진 제약
 
 1. 프로토콜 버전은 알리지만 클라이언트와 협상하여 하위 버전으로 내려가지는 않는다.
 2. COMMAND_RESULT에 request ID가 없다.

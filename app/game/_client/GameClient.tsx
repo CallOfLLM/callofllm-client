@@ -5,13 +5,27 @@ import { Box, OrbitControls, useAnimations, useGLTF } from "@react-three/drei";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { LoopRepeat } from "three";
 import { SkeletonUtils } from "three-stdlib";
-import { COMMAND_RESULT_CODE, createSquad, dump, MAP_BOUNDS, packetDataToBuffer, parseServerPacket, PKT, PKT_NAME, PROTOCOL_VERSION, STAGE_STATE, type Soldier } from "../../(lib)/_packet";
+import {
+  COMMAND_RESULT_CODE,
+  createSquad,
+  dump,
+  MAP_BOUNDS,
+  packetDataToBuffer,
+  parseServerPacket,
+  PKT,
+  PKT_NAME,
+  PROTOCOL_VERSION,
+  STAGE_STATE,
+  TEAM_FLAG,
+  type Soldier,
+} from "../../(lib)/_packet";
+import { allySpawnPoint, loadDeployment, squadSoldierCount, type DeploymentSquad, type StageDeployment } from "../../(lib)/squadfuncs";
 import type { StageData } from "./StageData";
 import stageDefinitions from "./stages.json";
 
 const DEFAULT_WS_URL = "wss://performer-brighton-fireplace-sake.trycloudflare.com/";
 
-// V9 맵 좌표계: 좌상단이 원점이고 서버의 Y는 Three.js z축에 대응한다.
+// V11 맵 좌표계: 좌상단이 원점이고 서버의 Y는 Three.js z축에 대응한다.
 const MAP_W = MAP_BOUNDS.maxX + 1;
 const MAP_H = MAP_BOUNDS.maxY + 1;
 const GROUND_MODEL_URL = "/Ground_optimize.glb";
@@ -35,11 +49,27 @@ const CLOSE_REASON: Record<number, string> = {
   1009: "메시지가 너무 큼",
   1011: "서버 내부 오류",
   1015: "TLS 핸드셰이크 실패",
+  4002: "게임 프로토콜 버전 불일치",
 };
 
 // teamFlag → 색. 팀 번호 의미가 정해지면 여기만 바꾸면 된다.
 const TEAM_COLOR = ["#3b82f6", "#ef4444"];
 const DEAD_COLOR = "#4b5563";
+const DIRECTION_VECTORS = [
+  [1, 0],
+  [1, 1],
+  [0, 1],
+  [-1, 1],
+  [-1, 0],
+  [-1, -1],
+  [0, -1],
+  [1, -1],
+] as const;
+
+function directionToRotationY(direction: number) {
+  const [x, z] = DIRECTION_VECTORS[direction] ?? DIRECTION_VECTORS[0];
+  return Math.atan2(x, z);
+}
 
 const COMMAND_RESULT_NAME: Record<number, string> = {
   [COMMAND_RESULT_CODE.OK]: "OK",
@@ -70,8 +100,32 @@ function getSelectedStage() {
   };
 }
 
-function buildStagePackets(stage: StageData) {
-  return stage.squads.map((squad) => createSquad(squad.archerCount, squad.warriorCount, squad.knightCount, squad.teamFlag, squad.spawnX, squad.spawnY));
+/** allySquad가 있으면 준비 화면에서 이름을 붙인 아군 스쿼드 생성 요청이다. */
+type StagePacket = { label: string; buffer: ArrayBuffer; allySquad: DeploymentSquad | null };
+
+/** 서버가 CREATE 성공 응답으로 알려준 실제 squadID와 준비 화면 이름을 묶은 값 */
+type AllySquad = DeploymentSquad & { squadID: number };
+
+/** 아군은 로컬스토리지의 준비 화면 편성으로, 적군은 스테이지 정의(teamFlag=1)로 만든다. */
+function buildStagePackets(stage: StageData, deployment: StageDeployment | null): StagePacket[] {
+  const allyPackets = (deployment?.squads ?? [])
+    .filter((squad) => squadSoldierCount(squad) > 0)
+    .map((squad, index) => {
+      const { spawnX, spawnY } = allySpawnPoint(index);
+      return {
+        label: squad.name,
+        buffer: createSquad(squad.archer, squad.warrior, squad.knight, TEAM_FLAG.ALLY, spawnX, spawnY),
+        allySquad: squad,
+      };
+    });
+
+  const enemyPackets = stage.squads.map((squad, index) => ({
+    label: `적군 ${index + 1}`,
+    buffer: createSquad(squad.archerCount, squad.warriorCount, squad.knightCount, squad.teamFlag, squad.spawnX, squad.spawnY),
+    allySquad: null,
+  }));
+
+  return [...allyPackets, ...enemyPackets];
 }
 
 function Battlefield() {
@@ -132,7 +186,9 @@ function Soldiers({ soldiers }: { soldiers: Soldier[] }) {
               <circleGeometry args={[5, 24]} />
               <meshBasicMaterial color={color} transparent opacity={0.75} />
             </mesh>
-            <AnimatedSoldier />
+            <group rotation={[0, directionToRotationY(s.direction), 0]}>
+              <AnimatedSoldier />
+            </group>
           </group>
         );
       })}
@@ -197,6 +253,17 @@ export default function GameClient() {
   // 서버가 내려준 병사 스냅샷 — 화면은 전적으로 이 값으로만 그린다
   const [soldiers, setSoldiers] = useState<Soldier[]>([]);
   const [stageStatus, setStageStatus] = useState<{ stageState: number; aliveAllyCount: number; aliveEnemyCount: number }>();
+
+  // 준비 화면에서 저장한 아군 편성 — CREATE_SQUAD를 보낸 순서와 같다
+  const [deployment, setDeployment] = useState<StageDeployment | null>(null);
+  useEffect(() => {
+    setDeployment(loadDeployment(getSelectedStage().stageID));
+  }, []);
+
+  // 보낸 CREATE_SQUAD 순서대로 쌓아 두고, COMMAND_RESULT가 올 때마다 하나씩 꺼내 쓴다.
+  // 서버는 팀마다 0부터 생성 성공 순으로 squadID를 발급하므로 응답의 entityID를 이름과 묶어야 정확하다.
+  const pendingCreatesRef = useRef<(DeploymentSquad | null)[]>([]);
+  const [allySquads, setAllySquads] = useState<AllySquad[]>([]);
 
   // 페이지를 떠날 때 소켓 정리
   useEffect(() => {
@@ -284,11 +351,15 @@ export default function GameClient() {
         return;
       }
 
-      wsLog(`RECV (${e.data.byteLength}바이트)`, dump(e.data));
+      const packetDump = dump(e.data);
+      wsLog(`RECV (${e.data.byteLength}바이트)`, packetDump);
 
       const packet = parseServerPacket(e.data);
       if (!packet) {
-        pushLog("error", "RECV — V9 서버 패킷 타입 또는 길이가 명세와 맞지 않아 무시");
+        pushLog(
+          "error",
+          `RECV — 지원하는 서버 패킷 구조와 맞지 않아 무시 (type=${packetDump.pktType ?? "없음"}, declared=${packetDump.pktLen ?? "없음"}, actual=${packetDump.byteLength})`,
+        );
         return;
       }
 
@@ -298,13 +369,16 @@ export default function GameClient() {
           break;
 
         case PKT.SC_WELCOME:
+          setServerProtocolVersion(packet.protocolVersion);
           if (packet.protocolVersion !== PROTOCOL_VERSION) {
-            pushLog("warn", `프로토콜 버전 차이 — 클라이언트 패킷 V${PROTOCOL_VERSION}, 서버 WELCOME V${packet.protocolVersion}; 호환 모드로 계속 연결`);
+            pushLog("warn", `프로토콜 버전 차이 — 클라이언트 V${PROTOCOL_VERSION}, 서버 V${packet.protocolVersion}; 패킷 구조 검증만 유지하고 연결 계속`);
           }
           setProtocolReady(true);
-          setServerProtocolVersion(packet.protocolVersion);
           setSessionID(packet.sessionID);
-          pushLog("info", `WELCOME — V${packet.protocolVersion}, session=${packet.sessionID}, tick=${packet.serverTickMs}ms`);
+          pushLog(
+            "info",
+            `WELCOME — V${packet.protocolVersion}, session=${packet.sessionID}, tick=${packet.serverTickMs}ms${packet.extraValue === undefined ? "" : `, extra=${packet.extraValue}`}`,
+          );
 
           if (!stageInitializationStartedRef.current) {
             stageInitializationStartedRef.current = true;
@@ -313,12 +387,18 @@ export default function GameClient() {
               const { stageID, stage, usedFallback } = getSelectedStage();
               if (!stage) throw new Error("사용할 수 있는 스테이지 배치가 없습니다.");
 
-              const stagePackets = buildStagePackets(stage);
+              const savedDeployment = loadDeployment(stageID);
+              const stagePackets = buildStagePackets(stage, savedDeployment);
               if (usedFallback) pushLog("warn", "잘못된 stage 번호라 1번 스테이지를 사용합니다.");
+              if (!savedDeployment) pushLog("warn", "저장된 아군 편성이 없어 적군만 배치합니다. 출정 준비 화면에서 편성해 주세요.");
+
+              // COMMAND_RESULT는 보낸 순서대로 오므로 같은 순서로 대기열을 만들어 둔다
+              pendingCreatesRef.current = stagePackets.map((stagePacket) => stagePacket.allySquad);
+              setAllySquads([]);
 
               stagePackets.forEach((stagePacket, index) => {
-                wsLog(`SEND STAGE ${stageID} CREATE_SQUAD ${index + 1}/${stagePackets.length}`, dump(stagePacket));
-                ws.send(stagePacket);
+                wsLog(`SEND STAGE ${stageID} CREATE_SQUAD ${index + 1}/${stagePackets.length} '${stagePacket.label}'`, dump(stagePacket.buffer));
+                ws.send(stagePacket.buffer);
               });
               pushLog("info", `STAGE ${stageID} '${stage.title}' 초기 배치 ${stagePackets.length}개 전송 완료`);
             } catch (error) {
@@ -328,21 +408,22 @@ export default function GameClient() {
           }
           break;
 
-        case PKT.SC_ATTACK_EVENT:
-          pushLog(
-            "recv",
-            `ATTACK — ${packet.attackerTeamFlag}:${packet.attackerSquadID}:${packet.attackerSoldierID} → ${packet.targetTeamFlag}:${packet.targetSquadID}:${packet.targetSoldierID}, damage=${packet.appliedDamage}, HP=${packet.targetHP}`,
-          );
-          break;
-
-        case PKT.SC_UNIT_DIED:
-          pushLog("recv", `DIED — ${packet.deadTeamFlag}:${packet.deadSquadID}:${packet.deadSoldierID}, killer=${packet.killerTeamFlag}:${packet.killerSquadID}:${packet.killerSoldierID}`);
-          break;
-
         case PKT.SC_COMMAND_RESULT: {
           const resultName = COMMAND_RESULT_NAME[packet.resultCode] ?? `UNKNOWN(${packet.resultCode})`;
           const commandName = PKT_NAME[packet.requestPacketType] ?? `TYPE_${packet.requestPacketType}`;
           pushLog(packet.resultCode === COMMAND_RESULT_CODE.OK ? "recv" : "error", `${commandName} 결과 — ${resultName}, team=${packet.teamFlag}, entity=${packet.entityID}`);
+
+          // CREATE 성공 응답의 entityID가 그 스쿼드의 실제 squadID다. 실패해도 대기열은 한 칸 밀어야 순서가 맞는다.
+          if (packet.requestPacketType === PKT.CS_CREATE_SQUAD && pendingCreatesRef.current.length > 0) {
+            const created = pendingCreatesRef.current.shift() ?? null;
+
+            if (created && packet.resultCode === COMMAND_RESULT_CODE.OK) {
+              setAllySquads((prev) => [...prev, { ...created, squadID: packet.entityID }]);
+              pushLog("info", `아군 스쿼드 '${created.name}' → squadID ${packet.entityID}`);
+            } else if (created) {
+              pushLog("error", `아군 스쿼드 '${created.name}' 생성 실패 — ${resultName}`);
+            }
+          }
           break;
         }
 
@@ -372,6 +453,8 @@ export default function GameClient() {
       setServerProtocolVersion(undefined);
       setSessionID(undefined);
       stageInitializationStartedRef.current = false;
+      pendingCreatesRef.current = [];
+      setAllySquads([]);
       setSoldiers([]);
       setStageStatus(undefined);
     };
@@ -449,6 +532,15 @@ export default function GameClient() {
             protocolVersion: serverProtocolVersion ?? PROTOCOL_VERSION,
             mapBounds: MAP_BOUNDS,
             stage: stageStatus ?? null,
+            // 사용자가 스쿼드를 이름으로 부를 수 있도록 이름 ↔ squadID 표를 함께 보낸다
+            allySquads: allySquads.map(({ squadID, name, warrior, archer, knight }) => ({
+              teamFlag: TEAM_FLAG.ALLY,
+              squadID,
+              name,
+              warriorCount: warrior,
+              archerCount: archer,
+              knightCount: knight,
+            })),
             soldiers,
           },
         }),
@@ -533,6 +625,26 @@ export default function GameClient() {
         </div>
       </div>
 
+      {/* 아군 편성 — 생성 응답을 받은 뒤에는 서버가 준 squadID를 함께 보여준다 */}
+      {(allySquads.length > 0 || (deployment?.squads.length ?? 0) > 0) && (
+        <div className="fixed top-20 left-3 w-72 rounded-md bg-black/70 p-3 text-xs text-white">
+          <div className="mb-2 font-bold">{allySquads.length > 0 ? `아군 스쿼드 ${allySquads.length}개` : "출전 대기 편성"}</div>
+          <ul className="flex flex-col gap-1">
+            {(allySquads.length > 0 ? allySquads : (deployment?.squads ?? []).map((squad) => ({ ...squad, squadID: null }))).map((squad, index) => (
+              <li key={index} className="flex items-baseline justify-between gap-2">
+                <span className="truncate font-semibold text-sky-300">
+                  {squad.squadID === null ? "" : `#${squad.squadID} `}
+                  {squad.name}
+                </span>
+                <span className="shrink-0 text-white/60">
+                  전 {squad.warrior} · 궁 {squad.archer} · 기 {squad.knight}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* 수신한 병사 값 확인용 패널 */}
       <div className="fixed top-3 right-3 w-72 max-h-[calc(100dvh-24rem)] overflow-y-auto rounded-md bg-black/70 p-3 text-white text-xs">
         <div className="font-bold mb-2">병사 {soldiers.length}명</div>
@@ -547,6 +659,7 @@ export default function GameClient() {
                 <th>pos</th>
                 <th>HP</th>
                 <th>st</th>
+                <th>dir</th>
               </tr>
             </thead>
             <tbody>
@@ -563,6 +676,7 @@ export default function GameClient() {
                   </td>
                   <td className="text-center">{s.hp}</td>
                   <td className="text-center">{s.state}</td>
+                  <td className="text-center">{s.direction}</td>
                 </tr>
               ))}
             </tbody>
