@@ -1,0 +1,31 @@
+{
+  "source": "public/Ground_optimize.glb",
+  "data": "Ground_optimize.grid.bin",
+  "format": "uint8-row-major",
+  "width": 6400,
+  "height": 3200,
+  "byteLength": 20480000,
+  "indexFormula": "index = y * 6400 + x",
+  "values": {
+    "0": "ground",
+    "1": "stone"
+  },
+  "sourceToGrid": {
+    "x": "sourceX * 10",
+    "y": "-sourceZ * 10"
+  },
+  "stoneMeshes": [
+    "stone",
+    "stone_tallC",
+    "stone_tallD",
+    "stone_tallE",
+    "stone_tallF",
+    "stone_tallG",
+    "stone_tallH",
+    "stone_tallJ"
+  ],
+  "triangleCount": 7877,
+  "stoneCellCount": 4222685,
+  "groundCellCount": 16257315,
+  "stoneCoveragePercent": 20.618579
+}

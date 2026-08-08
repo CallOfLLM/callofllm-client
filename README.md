@@ -16,6 +16,25 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## OpenAI API
+
+Copy `.env.example` to `.env.local` and set your API key.
+
+```bash
+OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_MODEL=gpt-5-nano
+```
+
+Send a request to the server-side OpenAI endpoint:
+
+```bash
+curl -X POST http://localhost:3000/api/openai \
+  -H "Content-Type: application/json" \
+  -d '{"message":"안녕, 현재 상태를 알려줘"}'
+```
+
+The response contains `responseId`, `text`, and `model`. To continue the same conversation, send the returned `responseId` as `previousResponseId` in the next request.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
