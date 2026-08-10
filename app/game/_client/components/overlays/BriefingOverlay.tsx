@@ -1,10 +1,6 @@
-"use client";
-
-// 전투를 시작하기 전에 이번 스테이지의 목표와 편성을 한 번 보여준다.
-
 import Link from "next/link";
-import type { DeploymentSquad } from "../../(lib)/squadfuncs";
-import { isTutorialStage, type StageData } from "../../(lib)/stages";
+import type { DeploymentSquad } from "../../../../(lib)/squadfuncs";
+import { isTutorialStage, type StageData } from "../../../../(lib)/stages";
 
 type Props = {
   stage: StageData;
@@ -16,7 +12,12 @@ export default function BriefingOverlay({ stage, squads, onStart }: Props) {
   const tutorial = isTutorialStage(stage);
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="작전 브리핑" className="fixed inset-0 z-30 flex items-center justify-center bg-slate-950/85 p-6 backdrop-blur">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="작전 브리핑"
+      className="fixed inset-0 z-30 flex items-center justify-center bg-slate-950/85 p-6 backdrop-blur"
+    >
       <div className="max-h-full w-full max-w-lg overflow-y-auto rounded-2xl border border-white/10 bg-slate-900/90 p-8 text-white">
         <p className="text-sm font-semibold tracking-[0.24em] text-sky-400">
           STAGE {stage.id}
@@ -29,7 +30,9 @@ export default function BriefingOverlay({ stage, squads, onStart }: Props) {
         <ol className="mt-3 flex flex-col gap-2">
           {stage.objective.steps.map((step, index) => (
             <li key={index} className="flex gap-3 text-sm leading-relaxed">
-              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-sky-500/20 text-xs font-bold tabular-nums text-sky-300">{index + 1}</span>
+              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-sky-500/20 text-xs font-bold tabular-nums text-sky-300">
+                {index + 1}
+              </span>
               <span className="text-slate-200">{step.label}</span>
             </li>
           ))}
@@ -68,7 +71,12 @@ export default function BriefingOverlay({ stage, squads, onStart }: Props) {
         <p className="mt-8 text-sm text-slate-400">화면 아래 입력창에 자연어로 명령하면 AI가 부대를 움직입니다.</p>
 
         <div className="mt-6 flex flex-col gap-3">
-          <button type="button" onClick={onStart} autoFocus className="h-14 rounded-lg bg-sky-500 text-base font-bold text-slate-950 transition hover:bg-sky-400">
+          <button
+            type="button"
+            onClick={onStart}
+            autoFocus
+            className="h-14 rounded-lg bg-sky-500 text-base font-bold text-slate-950 transition hover:bg-sky-400"
+          >
             작전 시작
           </button>
           <Link

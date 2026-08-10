@@ -5,8 +5,8 @@
 // SC_SOLDIER_POSITIONS 스냅샷과 클라이언트가 보낸 명령을 보고 여기서 직접 판정한다.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { SOLDIER_STATE, STAGE_STATE, TEAM_FLAG, type Soldier } from "../../(lib)/_packet";
-import type { CommandName, Objective, ObjectiveStep, StepCondition } from "../../(lib)/stages";
+import { SOLDIER_STATE, STAGE_STATE, TEAM_FLAG, type Soldier } from "../../../(lib)/_packet";
+import type { CommandName, Objective, ObjectiveStep, StepCondition } from "../../../(lib)/stages";
 
 export type Outcome = "playing" | "clear" | "fail";
 
@@ -171,6 +171,10 @@ export function useObjective(objective: Objective | null, soldiers: Soldier[], s
     // 아군 전멸은 어떤 목표에서도 패배다.
     if (stageState === STAGE_STATE.ENEMY_WIN) {
       finish("fail", "아군이 전멸했습니다.");
+      return;
+    }
+    if (stageState === STAGE_STATE.DRAW) {
+      finish("fail", "양측 부대가 모두 전멸했습니다.");
       return;
     }
 
