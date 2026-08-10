@@ -1,7 +1,7 @@
 // 스테이지 정의 — 선택 화면 메타, 아군/적군 초기 배치, 승패 조건을 한곳에서 관리한다.
 // squadID는 서버가 팀별로 0부터 발급하므로 여기에 넣지 않는다.
 
-import { MAP_BOUNDS, TEAM_FLAG, type PacketData, type TeamFlag } from "./_packet";
+import { MAP_BOUNDS, SANDBOX_MAP_ID, TEAM_FLAG, type PacketData, type TeamFlag } from "./_packet";
 
 /** 맵 정중앙. 튜토리얼 아군의 배치 앵커다. */
 export const MAP_CENTER = {
@@ -72,6 +72,12 @@ export interface StageData {
   id: number;
   title: string;
   description: string;
+  /**
+   * SELECT_MAP으로 보낼 서버 맵 ID. 생략하면 장애물이 없는 내장 sandbox(0)를 쓴다.
+   * 외부 JSON 맵(1~3)으로 바꿀 때는 아래 spawn 좌표가 그 맵의 WALL 셀이 아닌지 먼저 확인해야 한다.
+   * WALL이면 서버가 CREATE_SQUAD를 INVALID_PAYLOAD(-1)로 거절한다.
+   */
+  mapID?: number;
   /** 있으면 준비 화면을 건너뛰고 이 편성을 그대로 배치한다(튜토리얼). 없으면 준비 화면 편성을 쓴다. */
   allySquads?: FixedAllySquad[];
   enemySquads: SquadData[];
@@ -232,6 +238,11 @@ export const STAGES: StageData[] = [
     rewardGold: 500,
   },
 ];
+
+/** 스테이지가 사용할 서버 맵 ID. 지정하지 않은 스테이지는 sandbox 맵이다. */
+export function stageMapID(stage: StageData): number {
+  return stage.mapID ?? SANDBOX_MAP_ID;
+}
 
 export function findStage(stageID: number): StageData | undefined {
   return STAGES.find((stage) => stage.id === stageID);

@@ -9,6 +9,10 @@ type Props = {
   assetsReady: boolean;
   /** 접속이 끊긴 상태면 자동 재연결을 기다리는 대신 안내를 띄운다. */
   disconnected: boolean;
+  /** SELECT_MAP → START_STAGE → CREATE_SQUAD 중 지금 어디까지 왔는지 */
+  setupLabel: string;
+  /** 스테이지 준비 절차가 서버 거절로 멈췄는지 */
+  setupFailed: boolean;
 };
 
 function Checklist({ done, label }: { done: boolean; label: string }) {
@@ -26,7 +30,7 @@ function Checklist({ done, label }: { done: boolean; label: string }) {
   );
 }
 
-export default function LoadingOverlay({ networkReady, assetsReady, disconnected }: Props) {
+export default function LoadingOverlay({ networkReady, assetsReady, disconnected, setupLabel, setupFailed }: Props) {
   return (
     <div role="status" aria-live="polite" className="fixed inset-0 z-30 flex items-center justify-center bg-slate-950/85 p-6 backdrop-blur">
       <div className="w-full max-w-md rounded-2xl border border-white/10 bg-slate-900/90 p-8 text-white">
@@ -34,9 +38,16 @@ export default function LoadingOverlay({ networkReady, assetsReady, disconnected
         <h2 className="mt-2 text-2xl font-bold">전장을 준비하고 있습니다</h2>
 
         <ul className="mt-6 flex flex-col gap-3">
-          <Checklist done={networkReady} label="게임 서버에 연결하고 부대를 배치하는 중" />
+          <Checklist done={networkReady} label={networkReady ? "게임 서버에 연결하고 부대를 배치하는 중" : `게임 서버 준비 — ${setupLabel}`} />
           <Checklist done={assetsReady} label="전장과 병사 모델을 내려받는 중" />
         </ul>
+
+        {setupFailed && !disconnected && (
+          <div className="mt-6 rounded-lg border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
+            <p>서버가 스테이지 준비 요청을 거절했습니다.</p>
+            <p className="mt-1 text-amber-100/70">브라우저 콘솔의 COMMAND_RESULT 로그에서 사유를 확인한 뒤 접속을 다시 눌러 주세요.</p>
+          </div>
+        )}
 
         {disconnected && (
           <div className="mt-6 rounded-lg border border-red-400/30 bg-red-400/10 p-4 text-sm text-red-200">
