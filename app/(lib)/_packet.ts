@@ -1,6 +1,6 @@
-// CLIENT_PACKET_SPEC_V11.md 기준 바이너리 직렬화/역직렬화
+// CLIENT_PACKET_SPEC_V15.md 기준 바이너리 직렬화/역직렬화
 
-export const PROTOCOL_VERSION = 11;
+export const PROTOCOL_VERSION = 15;
 export const HEADER_SIZE = 8;
 export const SOLDIER_SIZE = 32;
 export const MAX_SQUAD_SIZE = 200;
@@ -430,7 +430,7 @@ export function moveFireInRange(teamFlag: TeamFlag, squadID: number, destination
   return build(PKT.CS_MOVE_FIRE_IN_RANGE, [teamFlag, squadID, destinationX, destinationY]);
 }
 
-/** API가 반환한 PacketData를 검증하면서 V11 바이너리 패킷으로 변환한다. */
+/** API가 반환한 PacketData를 검증하면서 V15 바이너리 패킷으로 변환한다. */
 export function packetDataToBuffer(packetData: unknown): ArrayBuffer {
   if (typeof packetData !== "object" || packetData === null || Array.isArray(packetData)) {
     throw new TypeError("packetData는 게임 명령 JSON 객체여야 합니다.");
@@ -563,7 +563,7 @@ export function parseSoldierSnapshot(buf: ArrayBuffer): SoldierSnapshot | null {
   return { pktType, pktLen, soldierCount, soldiers };
 }
 
-/** V11 활성 서버 패킷(Type 100, 101, 104, 105)을 판별하고 길이를 검증한다. */
+/** V15 활성 서버 패킷(Type 100, 101, 104, 105)을 판별하고 길이를 검증한다. */
 export function parseServerPacket(buf: ArrayBuffer): ServerPacket | null {
   if (buf.byteLength < HEADER_SIZE) return null;
 

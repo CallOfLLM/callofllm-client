@@ -35,6 +35,9 @@ export interface GameData {
   warrior_attack: number;
   archer_attack: number;
   knight_attack: number;
+
+  /** 마지막으로 클리어한 스테이지 번호. 0이면 1번만 열려 있다. */
+  clearedStage: number;
 }
 
 export const DEFAULT_GAME_DATA: GameData = {
@@ -46,6 +49,8 @@ export const DEFAULT_GAME_DATA: GameData = {
   warrior_attack: 13,
   archer_attack: 10,
   knight_attack: 15,
+
+  clearedStage: 0,
 };
 
 /** 저장값이 없거나 깨졌으면 기본값으로 되돌린다. 브라우저에서만 호출한다. */
@@ -71,6 +76,15 @@ export function recruitTroop(data: GameData, troop: TroopKey): GameData | null {
   if (data.gold < cost) return null;
 
   return { ...data, gold: data.gold - cost, [troop]: data[troop] + 1 };
+}
+
+/**
+ * 스테이지를 처음 클리어했을 때만 보상 골드를 주고 진행도를 올린다.
+ * 이미 깬 스테이지를 다시 깨면 같은 객체를 그대로 돌려주므로 호출한 쪽에서 참조 비교로 구분할 수 있다.
+ */
+export function completeStage(data: GameData, stageID: number, rewardGold: number): GameData {
+  if (stageID <= data.clearedStage) return data;
+  return { ...data, gold: data.gold + rewardGold, clearedStage: stageID };
 }
 
 /** 골드가 모자라면 null, 충분하면 골드를 차감하고 해당 병종 공격력을 올린 새 데이터를 돌려준다. */
