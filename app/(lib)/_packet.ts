@@ -5,6 +5,16 @@ export const HEADER_SIZE = 8;
 export const SOLDIER_SIZE = 32;
 export const MAX_SQUAD_SIZE = 200;
 
+/** 한 세션에 만들 수 있는 스쿼드 수와 병사 수 상한 */
+export const MAX_SESSION_SQUADS = 128;
+export const MAX_SESSION_SOLDIERS = 2_000;
+
+/** 서버 내장 sandbox 맵. 장애물이 없어 어떤 좌표에도 스쿼드를 놓을 수 있다. */
+export const SANDBOX_MAP_ID = 0;
+
+/** maps/Map_00#_map_640x320.json으로 등록된 외부 맵 ID */
+export const EXTERNAL_MAP_IDS = [1, 2, 3] as const;
+
 export const MAP_BOUNDS = {
   minX: 0,
   maxX: 6399,
@@ -38,18 +48,22 @@ export const SOLDIER_STATE = {
 
 export type SoldierState = (typeof SOLDIER_STATE)[keyof typeof SOLDIER_STATE];
 
-export const SOLDIER_DIRECTION = {
+/**
+ * V15의 direction은 0..359도 정수다. 0=+X, 90=+Y, 180=-X, 270=-Y이며 +Y 쪽으로 각도가 커진다.
+ * V11까지 쓰던 0..7 8방향 코드가 아니므로 인덱스 테이블로 해석하면 안 된다.
+ */
+export const DIRECTION_DEGREE = {
   POSITIVE_X: 0,
-  POSITIVE_X_POSITIVE_Y: 1,
-  POSITIVE_Y: 2,
-  NEGATIVE_X_POSITIVE_Y: 3,
-  NEGATIVE_X: 4,
-  NEGATIVE_X_NEGATIVE_Y: 5,
-  NEGATIVE_Y: 6,
-  POSITIVE_X_NEGATIVE_Y: 7,
+  POSITIVE_Y: 90,
+  NEGATIVE_X: 180,
+  NEGATIVE_Y: 270,
 } as const;
 
-export type SoldierDirection = (typeof SOLDIER_DIRECTION)[keyof typeof SOLDIER_DIRECTION];
+/** direction(도)을 서버 평면의 단위 벡터로 바꾼다. */
+export function directionToVector(direction: number): { x: number; y: number } {
+  const radian = (direction * Math.PI) / 180;
+  return { x: Math.cos(radian), y: Math.sin(radian) };
+}
 
 export const COMMAND_RESULT_CODE = {
   OK: 0,
@@ -57,6 +71,8 @@ export const COMMAND_RESULT_CODE = {
   NOT_OWNER: -2,
   NOT_FOUND: -3,
   INVALID_STATE: -4,
+  PATH_NOT_FOUND: -5,
+  LIMIT_EXCEEDED: -6,
 } as const;
 
 export const STAGE_STATE = {
@@ -78,12 +94,16 @@ export const PKT = {
   CS_SET_ATTACK_DAMAGE: 7,
   CS_MOVE_ENGAGE_ON_SIGHT: 8,
   CS_MOVE_FIRE_IN_RANGE: 9,
+  CS_RESUME_SESSION: 10,
+  CS_SELECT_MAP: 11,
+  CS_START_STAGE: 12,
   SC_SOLDIER_POSITIONS: 100,
   SC_WELCOME: 101,
   SC_RESERVED_102: 102,
   SC_RESERVED_103: 103,
   SC_COMMAND_RESULT: 104,
   SC_STAGE_STATE: 105,
+  SC_MAP_INFO: 106,
 } as const;
 
 export const PKT_NAME: Record<number, string> = {
@@ -97,12 +117,16 @@ export const PKT_NAME: Record<number, string> = {
   [PKT.CS_SET_ATTACK_DAMAGE]: "SET_ATTACK_DAMAGE",
   [PKT.CS_MOVE_ENGAGE_ON_SIGHT]: "MOVE_ENGAGE_ON_SIGHT",
   [PKT.CS_MOVE_FIRE_IN_RANGE]: "MOVE_FIRE_IN_RANGE",
+  [PKT.CS_RESUME_SESSION]: "RESUME_SESSION",
+  [PKT.CS_SELECT_MAP]: "SELECT_MAP",
+  [PKT.CS_START_STAGE]: "START_STAGE",
   [PKT.SC_SOLDIER_POSITIONS]: "SOLDIER_POSITIONS",
   [PKT.SC_WELCOME]: "WELCOME",
   [PKT.SC_RESERVED_102]: "RESERVED_102",
   [PKT.SC_RESERVED_103]: "RESERVED_103",
   [PKT.SC_COMMAND_RESULT]: "COMMAND_RESULT",
   [PKT.SC_STAGE_STATE]: "STAGE_STATE",
+  [PKT.SC_MAP_INFO]: "MAP_INFO",
 };
 
 /** OpenAI API와 게임 클라이언트가 JSON으로 주고받는 단일 게임 명령. */
@@ -430,6 +454,23 @@ export function moveFireInRange(teamFlag: TeamFlag, squadID: number, destination
   return build(PKT.CS_MOVE_FIRE_IN_RANGE, [teamFlag, squadID, destinationX, destinationY]);
 }
 
+/** Type 10, 12 bytes — 끊어진 논리 세션에 다시 붙는다. 새 연결에서 가장 먼저 보낸다. */
+export function resumeSession(previousSessionID: number): ArrayBuffer {
+  assertID("previousSessionID", previousSessionID);
+  return build(PKT.CS_RESUME_SESSION, [previousSessionID]);
+}
+
+/** Type 11, 12 bytes — START_STAGE 전, 병사가 없을 때만 정적 Grid를 고른다. */
+export function selectMap(mapID: number): ArrayBuffer {
+  assertID("mapID", mapID);
+  return build(PKT.CS_SELECT_MAP, [mapID]);
+}
+
+/** Type 12, 8 bytes — 선택한 맵을 확정해 잠근다. payload가 없는 헤더 전용 패킷이다. */
+export function startStage(): ArrayBuffer {
+  return build(PKT.CS_START_STAGE, []);
+}
+
 /** API가 반환한 PacketData를 검증하면서 V15 바이너리 패킷으로 변환한다. */
 export function packetDataToBuffer(packetData: unknown): ArrayBuffer {
   if (typeof packetData !== "object" || packetData === null || Array.isArray(packetData)) {
@@ -478,7 +519,7 @@ export interface Soldier {
   posY: number;
   hp: number;
   state: SoldierState;
-  /** V11은 0..7을 사용하지만 V13 서버는 더 큰 방향값도 전송하므로 원시 int32로 보관한다. */
+  /** 0..359도. 0=+X, 90=+Y다. */
   direction: number;
 }
 
@@ -495,8 +536,8 @@ export interface WelcomePacket {
   protocolVersion: number;
   sessionID: number;
   serverTickMs: number;
-  /** V12 WELCOME에 추가된 값. 정확한 의미는 V12 명세 수신 전까지 해석하지 않는다. */
-  extraValue?: number;
+  /** 논리 세션을 보관해 주는 시간(ms). 서버가 알려준 값을 그대로 쓴다. */
+  reconnectTimeoutMs: number;
 }
 
 export interface CommandResultPacket {
@@ -516,7 +557,17 @@ export interface StageStatePacket {
   aliveEnemyCount: number;
 }
 
-export type ServerPacket = SoldierSnapshot | WelcomePacket | CommandResultPacket | StageStatePacket;
+export interface MapInfoPacket {
+  pktType: typeof PKT.SC_MAP_INFO;
+  pktLen: number;
+  mapID: number;
+  mapVersion: number;
+  worldWidth: number;
+  worldHeight: number;
+  gridCellSize: number;
+}
+
+export type ServerPacket = SoldierSnapshot | WelcomePacket | CommandResultPacket | StageStatePacket | MapInfoPacket;
 
 function getFixedPacketView(buf: ArrayBuffer, expectedType: number, expectedLength: number): DataView | null {
   if (buf.byteLength !== expectedLength) return null;
@@ -563,7 +614,7 @@ export function parseSoldierSnapshot(buf: ArrayBuffer): SoldierSnapshot | null {
   return { pktType, pktLen, soldierCount, soldiers };
 }
 
-/** V15 활성 서버 패킷(Type 100, 101, 104, 105)을 판별하고 길이를 검증한다. */
+/** V15 활성 서버 패킷(Type 100, 101, 104, 105, 106)을 판별하고 길이를 검증한다. */
 export function parseServerPacket(buf: ArrayBuffer): ServerPacket | null {
   if (buf.byteLength < HEADER_SIZE) return null;
 
@@ -575,15 +626,15 @@ export function parseServerPacket(buf: ArrayBuffer): ServerPacket | null {
   if (pktType === PKT.SC_SOLDIER_POSITIONS) return parseSoldierSnapshot(buf);
 
   if (pktType === PKT.SC_WELCOME) {
-    if (buf.byteLength !== 20 && buf.byteLength !== 24) return null;
-    const view = new DataView(buf);
+    const view = getFixedPacketView(buf, PKT.SC_WELCOME, 24);
+    if (!view) return null;
     return {
       pktType: PKT.SC_WELCOME,
       pktLen,
       protocolVersion: view.getInt32(8, LITTLE_ENDIAN),
       sessionID: view.getInt32(12, LITTLE_ENDIAN),
       serverTickMs: view.getInt32(16, LITTLE_ENDIAN),
-      extraValue: buf.byteLength === 24 ? view.getInt32(20, LITTLE_ENDIAN) : undefined,
+      reconnectTimeoutMs: view.getInt32(20, LITTLE_ENDIAN),
     };
   }
 
@@ -609,6 +660,20 @@ export function parseServerPacket(buf: ArrayBuffer): ServerPacket | null {
       stageState: view.getInt32(8, LITTLE_ENDIAN),
       aliveAllyCount: view.getInt32(12, LITTLE_ENDIAN),
       aliveEnemyCount: view.getInt32(16, LITTLE_ENDIAN),
+    };
+  }
+
+  if (pktType === PKT.SC_MAP_INFO) {
+    const view = getFixedPacketView(buf, PKT.SC_MAP_INFO, 28);
+    if (!view) return null;
+    return {
+      pktType: PKT.SC_MAP_INFO,
+      pktLen,
+      mapID: view.getInt32(8, LITTLE_ENDIAN),
+      mapVersion: view.getInt32(12, LITTLE_ENDIAN),
+      worldWidth: view.getInt32(16, LITTLE_ENDIAN),
+      worldHeight: view.getInt32(20, LITTLE_ENDIAN),
+      gridCellSize: view.getInt32(24, LITTLE_ENDIAN),
     };
   }
 

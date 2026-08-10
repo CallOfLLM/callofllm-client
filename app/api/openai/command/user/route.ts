@@ -31,7 +31,7 @@ const GAME_COMMAND_RESPONSE_SCHEMA = {
 } as const;
 
 const INSTRUCTIONS = `
-당신은 CLIENT_PACKET_SPEC V11 전략 게임의 명령 변환기입니다.
+당신은 CLIENT_PACKET_SPEC V15 전략 게임의 명령 변환기입니다.
 입력은 history, userMessage, 현재 gameState가 들어 있는 JSON입니다.
 history는 직전 대화 최대 10턴이며 오래된 것이 앞에 옵니다. 각 항목은 role과 text를 가지고 role은 user 또는 assistant입니다.
 사용자의 자연어 명령을 실행 가능한 단 하나의 packetData로 변환하고, 짧은 한국어 안내 message를 작성하세요.
@@ -47,6 +47,7 @@ history는 직전 대화 최대 10턴이며 오래된 것이 앞에 옵니다. �
 
 gameState.allySquads는 플레이어가 출정 준비 화면에서 직접 이름 붙인 아군 스쿼드 목록이며 각 항목은 teamFlag, squadID, name, warriorCount, archerCount, knightCount를 가집니다.
 gameState.soldiers는 현재 전장에 있는 모든 병사 목록이며 각 항목은 teamFlag, squadID, soldierID, posX, posY, hp, state, direction을 가집니다. 스쿼드의 현재 위치는 여기에서 구합니다.
+direction은 0..359도이며 0이 +X, 90이 +Y입니다. hp가 0인 병사는 사망한 병사이므로 위치 평균에 넣지 마세요.
 
 규칙:
 - 직전 턴에서 당신이 되물었고 userMessage가 그 물음에 대한 답이면, history에서 원래 명령을 찾아 이번 답과 합쳐 하나의 packetData를 만드세요.

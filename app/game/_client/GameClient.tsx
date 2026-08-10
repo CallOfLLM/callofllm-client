@@ -8,6 +8,7 @@ import { SkeletonUtils, type OrbitControls as OrbitControlsImpl } from "three-st
 import {
   COMMAND_RESULT_CODE,
   createSquad,
+  directionToVector,
   dump,
   MAP_BOUNDS,
   packetDataToBuffer,
@@ -15,15 +16,18 @@ import {
   PKT,
   PKT_NAME,
   PROTOCOL_VERSION,
+  resumeSession,
+  selectMap,
   SPAWN_BOUNDS,
   STAGE_STATE,
+  startStage,
   TEAM_FLAG,
   type PacketData,
   type Soldier,
 } from "../../(lib)/_packet";
 import { allySpawnPoint, loadDeployment, squadSoldierCount, type DeploymentSquad, type StageDeployment } from "../../(lib)/squadfuncs";
 import { completeStage, DEFAULT_GAME_DATA, loadGameData, saveGameData } from "../../(lib)/_gametype";
-import { findStage, isTutorialStage, nextStageID, STAGES, type CommandName, type StageData } from "../../(lib)/stages";
+import { findStage, isTutorialStage, nextStageID, STAGES, stageMapID, type CommandName, type StageData } from "../../(lib)/stages";
 import BriefingOverlay from "./BriefingOverlay";
 import LoadingOverlay from "./LoadingOverlay";
 import ObjectiveMarkers from "./ObjectiveMarkers";
@@ -71,20 +75,11 @@ const CLOSE_REASON: Record<number, string> = {
 // teamFlag → 색. 팀 번호 의미가 정해지면 여기만 바꾸면 된다.
 const TEAM_COLOR = ["#3b82f6", "#ef4444"];
 const DEAD_COLOR = "#4b5563";
-const DIRECTION_VECTORS = [
-  [1, 0],
-  [1, 1],
-  [0, 1],
-  [-1, 1],
-  [-1, 0],
-  [-1, -1],
-  [0, -1],
-  [1, -1],
-] as const;
 
+/** V15 direction은 0..359도다. 서버 +Y가 Three.js +Z이므로 (cos, sin)을 (x, z)로 그대로 쓴다. */
 function directionToRotationY(direction: number) {
-  const [x, z] = DIRECTION_VECTORS[direction] ?? DIRECTION_VECTORS[0];
-  return Math.atan2(x, z);
+  const { x, y } = directionToVector(direction);
+  return Math.atan2(x, y);
 }
 
 const COMMAND_RESULT_NAME: Record<number, string> = {
@@ -93,6 +88,8 @@ const COMMAND_RESULT_NAME: Record<number, string> = {
   [COMMAND_RESULT_CODE.NOT_OWNER]: "NOT_OWNER",
   [COMMAND_RESULT_CODE.NOT_FOUND]: "NOT_FOUND",
   [COMMAND_RESULT_CODE.INVALID_STATE]: "INVALID_STATE",
+  [COMMAND_RESULT_CODE.PATH_NOT_FOUND]: "PATH_NOT_FOUND",
+  [COMMAND_RESULT_CODE.LIMIT_EXCEEDED]: "LIMIT_EXCEEDED",
 };
 
 const STAGE_STATE_NAME: Record<number, string> = {
@@ -143,6 +140,41 @@ type EnemySquadSeed = {
 type EnemySquad = EnemySquadSeed & { squadID: number };
 type PendingCreate = { kind: "ally"; squad: DeploymentSquad } | { kind: "enemy"; squad: EnemySquadSeed };
 type StagePacket = { label: string; buffer: ArrayBuffer; pendingCreate: PendingCreate };
+
+/**
+ * V15 접속 절차. 순서를 어기면 서버가 INVALID_STATE(-4)로 거절하므로 한 단계씩 응답을 보고 넘어간다.
+ * WELCOME → (재접속이면 RESUME_SESSION) → SELECT_MAP → MAP_INFO 확인 → START_STAGE → CREATE_SQUAD 반복
+ */
+type SetupPhase = "idle" | "resuming" | "selectingMap" | "startingStage" | "creatingSquads" | "ready" | "failed";
+
+const SETUP_PHASE_LABEL: Record<SetupPhase, string> = {
+  idle: "서버 WELCOME 대기 중",
+  resuming: "이전 세션에 다시 붙는 중",
+  selectingMap: "맵을 선택하는 중",
+  startingStage: "스테이지를 시작하는 중",
+  creatingSquads: "부대를 배치하는 중",
+  ready: "배치 완료",
+  failed: "스테이지 준비 실패",
+};
+
+type StageSetup = {
+  phase: SetupPhase;
+  stageID: number;
+  /** SELECT_MAP으로 보낸 맵 ID */
+  mapID: number;
+  /** SELECT_MAP의 Type 104 OK를 받았는지 */
+  mapCommandAccepted: boolean;
+  /** 가장 최근 Type 106이 알려준 맵 ID */
+  confirmedMapID: number | null;
+  /** 아직 보내지 않은 CREATE_SQUAD. 앞에서부터 하나씩 보내고 Type 104를 받은 뒤 다음을 보낸다. */
+  queue: StagePacket[];
+  /** 서버가 OK로 받아 준 스쿼드 수 */
+  createdCount: number;
+};
+
+function idleSetup(): StageSetup {
+  return { phase: "idle", stageID: 0, mapID: 0, mapCommandAccepted: false, confirmedMapID: null, queue: [], createdCount: 0 };
+}
 
 function clampSpawn(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -431,7 +463,8 @@ function summarize(v: unknown): string {
 export default function GameClient() {
   const wsRef = useRef<WebSocket | null>(null);
   const connectRef = useRef<() => void>(() => undefined);
-  const stageInitializationStartedRef = useRef(false);
+  const setupRef = useRef<StageSetup>(idleSetup());
+  const [setupPhase, setSetupPhase] = useState<SetupPhase>("idle");
   const [wsUrl, setWsUrl] = useState(DEFAULT_WS_URL);
 
   // onopen 이벤트에만 의존하지 않고 실제 readyState를 그대로 비춘다
@@ -442,6 +475,10 @@ export default function GameClient() {
   const [connectionClosed, setConnectionClosed] = useState(false);
   const [serverProtocolVersion, setServerProtocolVersion] = useState<number>();
   const [sessionID, setSessionID] = useState<number>();
+  const sessionIDRef = useRef<number | null>(null);
+  // 비정상 종료로 끊긴 논리 세션 ID. 다음 연결에서 RESUME_SESSION으로 복구를 시도한다.
+  const resumeSessionIDRef = useRef<number | null>(null);
+  const [mapInfo, setMapInfo] = useState<{ mapID: number; mapVersion: number; gridCellSize: number }>();
   const commandReady = connected && protocolReady;
 
   const [chatInput, setChatInput] = useState("");
@@ -582,7 +619,9 @@ export default function GameClient() {
     setProtocolReady(false);
     setServerProtocolVersion(undefined);
     setSessionID(undefined);
-    stageInitializationStartedRef.current = false;
+    sessionIDRef.current = null;
+    setupRef.current = idleSetup();
+    setSetupPhase("idle");
 
     wsLog(`핸드셰이크 시작 → ${url}`);
     const startedAt = performance.now();
@@ -612,6 +651,110 @@ export default function GameClient() {
       setWsState(ws.readyState);
     };
 
+    const sendSetupPacket = (label: string, buffer: ArrayBuffer) => {
+      if (ws.readyState !== WebSocket.OPEN) {
+        pushLog("error", `${label} 전송 실패 — 소켓이 열려 있지 않습니다`);
+        return false;
+      }
+      wsLog(`SEND ${label}`, dump(buffer));
+      ws.send(buffer);
+      return true;
+    };
+
+    const failSetup = (message: string) => {
+      setupRef.current.phase = "failed";
+      setSetupPhase("failed");
+      pushLog("error", message);
+    };
+
+    /** 큐에 남은 CREATE_SQUAD를 하나 보낸다. 모두 보냈으면 준비 완료로 넘어간다. */
+    const sendNextCreate = () => {
+      const setup = setupRef.current;
+      const next = setup.queue.shift();
+      if (!next) {
+        if (setup.createdCount === 0) {
+          failSetup(`STAGE ${setup.stageID} 배치 실패 — 서버가 CREATE_SQUAD를 모두 거절했습니다. 생성 좌표가 map=${setup.mapID}의 벽이 아닌지 확인하세요.`);
+          return;
+        }
+        setup.phase = "ready";
+        setSetupPhase("ready");
+        pushLog("info", `STAGE ${setup.stageID} 초기 배치 완료 — 스쿼드 ${setup.createdCount}개`);
+        return;
+      }
+
+      // COMMAND_RESULT에는 request ID가 없으므로 보낸 순서대로 대기열에 쌓아 두고 하나씩 대응시킨다
+      pendingCreatesRef.current.push(next.pendingCreate);
+      const remaining = setup.queue.length;
+      sendSetupPacket(`CREATE_SQUAD '${next.label}' (남은 ${remaining}개)`, next.buffer);
+    };
+
+    /** SELECT_MAP의 Type 104와 같은 mapID의 Type 106이 모두 도착해야 START_STAGE를 보낸다. */
+    const maybeStartStage = () => {
+      const setup = setupRef.current;
+      if (setup.phase !== "selectingMap") return;
+      if (!setup.mapCommandAccepted || setup.confirmedMapID !== setup.mapID) return;
+
+      setup.phase = "startingStage";
+      setSetupPhase("startingStage");
+      sendSetupPacket("START_STAGE", startStage());
+    };
+
+    /** SELECT_MAP부터 시작하는 스테이지 준비 절차. 병사가 없는 상태에서만 성공한다. */
+    const beginStageSetup = () => {
+      try {
+        const { stageID, stage, usedFallback } = getSelectedStage();
+        if (!stage) throw new Error("사용할 수 있는 스테이지 배치가 없습니다.");
+        if (usedFallback) pushLog("warn", "잘못된 stage 번호라 1번 스테이지를 사용합니다.");
+
+        const savedDeployment = loadDeployment(stageID);
+        const stagePackets = buildStagePackets(stage, savedDeployment);
+        if (!stagePackets.some((stagePacket) => stagePacket.pendingCreate.kind === "ally")) {
+          pushLog("warn", "저장된 아군 편성이 없어 적군만 배치합니다. 출정 준비 화면에서 편성해 주세요.");
+        }
+
+        pendingCreatesRef.current = [];
+        setAllySquads([]);
+        enemySquadsRef.current = [];
+        setEnemySquads([]);
+
+        const mapID = stageMapID(stage);
+        setupRef.current = { phase: "selectingMap", stageID, mapID, mapCommandAccepted: false, confirmedMapID: null, queue: stagePackets, createdCount: 0 };
+        setSetupPhase("selectingMap");
+        pushLog("info", `STAGE ${stageID} '${stage.title}' 준비 시작 — map=${mapID}, 배치 ${stagePackets.length}개`);
+        sendSetupPacket(`SELECT_MAP map=${mapID}`, selectMap(mapID));
+      } catch (error) {
+        failSetup(`스테이지 초기화 실패 — ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+      }
+    };
+
+    /** CREATE_SQUAD 하나의 결과를 대기열 맨 앞 항목과 맞춰 반영한다. */
+    const applyCreateResult = (resultCode: number, resultName: string, teamFlag: number, entityID: number) => {
+      const pendingCreate = pendingCreatesRef.current.shift();
+      if (!pendingCreate) return;
+
+      if (resultCode !== COMMAND_RESULT_CODE.OK) {
+        const name = pendingCreate.kind === "ally" ? `아군 스쿼드 '${pendingCreate.squad.name}'` : `적군 ${pendingCreate.squad.unitType} 스쿼드`;
+        pushLog("error", `${name} 생성 실패 — ${resultName}${resultCode === COMMAND_RESULT_CODE.INVALID_PAYLOAD ? " (생성 좌표가 맵 밖이거나 벽입니다)" : ""}`);
+        return;
+      }
+
+      const expectedTeamFlag = pendingCreate.kind === "ally" ? TEAM_FLAG.ALLY : TEAM_FLAG.ENEMY;
+      if (teamFlag !== expectedTeamFlag) {
+        pushLog("error", `CREATE_SQUAD 응답 팀 불일치 — 예상 team=${expectedTeamFlag}, 실제 team=${teamFlag}`);
+        return;
+      }
+
+      setupRef.current.createdCount += 1;
+      if (pendingCreate.kind === "ally") {
+        setAllySquads((prev) => [...prev, { ...pendingCreate.squad, squadID: entityID }]);
+        pushLog("info", `아군 스쿼드 '${pendingCreate.squad.name}' → squadID ${entityID}`);
+      } else {
+        enemySquadsRef.current = [...enemySquadsRef.current, { ...pendingCreate.squad, squadID: entityID }];
+        setEnemySquads(enemySquadsRef.current);
+        pushLog("info", `적군 ${pendingCreate.squad.unitType} 스쿼드 → squadID ${entityID}`);
+      }
+    };
+
     ws.onmessage = (e) => {
       if (!(e.data instanceof ArrayBuffer)) {
         wsLog(`RECV (텍스트 ${String(e.data).length}자)`, e.data);
@@ -636,7 +779,7 @@ export default function GameClient() {
           setSoldiers(packet.soldiers);
           break;
 
-        case PKT.SC_WELCOME:
+        case PKT.SC_WELCOME: {
           setServerProtocolVersion(packet.protocolVersion);
           if (packet.protocolVersion !== PROTOCOL_VERSION) {
             setProtocolReady(false);
@@ -646,75 +789,98 @@ export default function GameClient() {
           }
           setProtocolReady(true);
           setSessionID(packet.sessionID);
+          sessionIDRef.current = packet.sessionID;
           pushLog(
             "info",
-            `WELCOME — V${packet.protocolVersion}, session=${packet.sessionID}, tick=${packet.serverTickMs}ms${packet.extraValue === undefined ? "" : `, extra=${packet.extraValue}`}`,
+            `WELCOME — V${packet.protocolVersion}, session=${packet.sessionID}, tick=${packet.serverTickMs}ms, reconnectTimeout=${packet.reconnectTimeoutMs}ms`,
           );
 
-          if (!stageInitializationStartedRef.current) {
-            stageInitializationStartedRef.current = true;
+          const resumeTarget = resumeSessionIDRef.current;
 
-            try {
-              const { stageID, stage, usedFallback } = getSelectedStage();
-              if (!stage) throw new Error("사용할 수 있는 스테이지 배치가 없습니다.");
-
-              const savedDeployment = loadDeployment(stageID);
-              const stagePackets = buildStagePackets(stage, savedDeployment);
-              if (usedFallback) pushLog("warn", "잘못된 stage 번호라 1번 스테이지를 사용합니다.");
-              if (!stagePackets.some((stagePacket) => stagePacket.pendingCreate.kind === "ally")) {
-                pushLog("warn", "저장된 아군 편성이 없어 적군만 배치합니다. 출정 준비 화면에서 편성해 주세요.");
-              }
-
-              // COMMAND_RESULT는 보낸 순서대로 오므로 같은 순서로 대기열을 만들어 둔다
-              pendingCreatesRef.current = stagePackets.map((stagePacket) => stagePacket.pendingCreate);
-              setAllySquads([]);
-              enemySquadsRef.current = [];
-              setEnemySquads([]);
-
-              stagePackets.forEach((stagePacket, index) => {
-                wsLog(`SEND STAGE ${stageID} CREATE_SQUAD ${index + 1}/${stagePackets.length} '${stagePacket.label}'`, dump(stagePacket.buffer));
-                ws.send(stagePacket.buffer);
-              });
-              pushLog("info", `STAGE ${stageID} '${stage.title}' 초기 배치 ${stagePackets.length}개 전송 완료`);
-            } catch (error) {
-              stageInitializationStartedRef.current = false;
-              pushLog("error", `스테이지 초기화 실패 — ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
-            }
+          // 복구에 성공하면 서버가 기존 세션 ID로 WELCOME을 다시 보낸다. 이때는 맵과 병력이 그대로 살아 있다.
+          if (resumeTarget !== null && resumeTarget === packet.sessionID) {
+            resumeSessionIDRef.current = null;
+            setupRef.current.phase = "ready";
+            setSetupPhase("ready");
+            pushLog("info", `세션 #${resumeTarget} 복구 — SELECT_MAP과 CREATE_SQUAD를 다시 보내지 않습니다`);
+            break;
           }
+
+          if (setupRef.current.phase !== "idle") break;
+
+          if (resumeTarget !== null) {
+            setupRef.current.phase = "resuming";
+            setSetupPhase("resuming");
+            sendSetupPacket(`RESUME_SESSION #${resumeTarget}`, resumeSession(resumeTarget));
+            break;
+          }
+
+          beginStageSetup();
           break;
+        }
 
         case PKT.SC_COMMAND_RESULT: {
           const resultName = COMMAND_RESULT_NAME[packet.resultCode] ?? `UNKNOWN(${packet.resultCode})`;
           const commandName = PKT_NAME[packet.requestPacketType] ?? `TYPE_${packet.requestPacketType}`;
-          pushLog(packet.resultCode === COMMAND_RESULT_CODE.OK ? "recv" : "error", `${commandName} 결과 — ${resultName}, team=${packet.teamFlag}, entity=${packet.entityID}`);
+          const ok = packet.resultCode === COMMAND_RESULT_CODE.OK;
+          pushLog(ok ? "recv" : "error", `${commandName} 결과 — ${resultName}, team=${packet.teamFlag}, entity=${packet.entityID}`);
 
-          // CREATE 성공 응답의 entityID가 그 스쿼드의 실제 squadID다. 실패해도 대기열은 한 칸 밀어야 순서가 맞는다.
-          if (packet.requestPacketType === PKT.CS_CREATE_SQUAD && pendingCreatesRef.current.length > 0) {
-            const pendingCreate = pendingCreatesRef.current.shift();
-            if (!pendingCreate) break;
+          const setup = setupRef.current;
+          switch (packet.requestPacketType) {
+            case PKT.CS_RESUME_SESSION:
+              if (setup.phase !== "resuming") break;
+              // 성공했다면 뒤이어 오는 WELCOME에서 마무리한다. 실패면 새 세션으로 처음부터 준비한다.
+              if (ok) break;
+              resumeSessionIDRef.current = null;
+              setup.phase = "idle";
+              pushLog("warn", `세션 복구 실패(${resultName}) — 새 세션으로 스테이지를 다시 준비합니다`);
+              beginStageSetup();
+              break;
 
-            if (packet.resultCode === COMMAND_RESULT_CODE.OK) {
-              const expectedTeamFlag = pendingCreate.kind === "ally" ? TEAM_FLAG.ALLY : TEAM_FLAG.ENEMY;
-              if (packet.teamFlag !== expectedTeamFlag) {
-                pushLog("error", `CREATE_SQUAD 응답 팀 불일치 — 예상 team=${expectedTeamFlag}, 실제 team=${packet.teamFlag}`);
+            case PKT.CS_SELECT_MAP:
+              if (setup.phase !== "selectingMap") break;
+              if (!ok) {
+                failSetup(`맵 선택 실패 — ${resultName}. 서버에 map=${setup.mapID}이 있는지, 이미 START_STAGE가 끝난 세션이 아닌지 확인하세요.`);
                 break;
               }
+              setup.mapCommandAccepted = true;
+              maybeStartStage();
+              break;
 
-              if (pendingCreate.kind === "ally") {
-                setAllySquads((prev) => [...prev, { ...pendingCreate.squad, squadID: packet.entityID }]);
-                pushLog("info", `아군 스쿼드 '${pendingCreate.squad.name}' → squadID ${packet.entityID}`);
-              } else {
-                const createdEnemy = { ...pendingCreate.squad, squadID: packet.entityID };
-                enemySquadsRef.current = [...enemySquadsRef.current, createdEnemy];
-                setEnemySquads(enemySquadsRef.current);
-                pushLog("info", `적군 ${pendingCreate.squad.unitType} 스쿼드 → squadID ${packet.entityID}`);
+            case PKT.CS_START_STAGE:
+              if (setup.phase !== "startingStage") break;
+              if (!ok) {
+                failSetup(`START_STAGE 실패 — ${resultName}. 이미 시작했거나 병력이 남아 있는 세션입니다.`);
+                break;
               }
-            } else if (pendingCreate.kind === "ally") {
-              pushLog("error", `아군 스쿼드 '${pendingCreate.squad.name}' 생성 실패 — ${resultName}`);
-            } else {
-              pushLog("error", `적군 ${pendingCreate.squad.unitType} 스쿼드 생성 실패 — ${resultName}`);
-            }
+              setup.phase = "creatingSquads";
+              setSetupPhase("creatingSquads");
+              pushLog("info", `START_STAGE 성공 — map=${packet.entityID} 확정, 부대 ${setup.queue.length}개 생성 시작`);
+              sendNextCreate();
+              break;
+
+            // CREATE 성공 응답의 entityID가 그 스쿼드의 실제 squadID다. 실패해도 대기열은 한 칸 밀어야 순서가 맞는다.
+            case PKT.CS_CREATE_SQUAD:
+              applyCreateResult(packet.resultCode, resultName, packet.teamFlag, packet.entityID);
+              if (setup.phase === "creatingSquads") sendNextCreate();
+              break;
           }
+          break;
+        }
+
+        case PKT.SC_MAP_INFO: {
+          pushLog(
+            "recv",
+            `MAP_INFO — map=${packet.mapID}, version=${packet.mapVersion}, world=${packet.worldWidth}×${packet.worldHeight}, cell=${packet.gridCellSize}`,
+          );
+          setMapInfo({ mapID: packet.mapID, mapVersion: packet.mapVersion, gridCellSize: packet.gridCellSize });
+
+          if (packet.worldWidth !== MAP_W || packet.worldHeight !== MAP_H) {
+            pushLog("warn", `서버 월드 크기(${packet.worldWidth}×${packet.worldHeight})가 클라이언트 맵(${MAP_W}×${MAP_H})과 달라 좌표가 어긋날 수 있습니다`);
+          }
+
+          setupRef.current.confirmedMapID = packet.mapID;
+          maybeStartStage();
           break;
         }
 
@@ -741,17 +907,29 @@ export default function GameClient() {
       const reason = CLOSE_REASON[e.code] ?? "알 수 없는 코드";
       console.warn(`[WS] CLOSE (${elapsed()}) code=${e.code} (${reason}) reason="${e.reason || "(없음)"}" wasClean=${e.wasClean}`, e);
       pushLog("warn", `CLOSE (${elapsed()}) code=${e.code} — ${reason}`);
+
+      // 정상 종료(1000)가 아니면 서버가 논리 세션을 잠시 붙들고 있다. 다음 접속에서 RESUME_SESSION으로 이어 붙인다.
+      // 스쿼드 이름 ↔ squadID 표는 복구한 세션에서도 그대로 써야 하므로 여기서 비우지 않는다.
+      const resumable = e.code !== 1000 && sessionIDRef.current !== null && setupRef.current.phase !== "idle";
+      resumeSessionIDRef.current = resumable ? sessionIDRef.current : null;
+      if (resumable) pushLog("info", `세션 #${sessionIDRef.current}을 기억해 두었습니다. 다시 접속하면 이어서 진행합니다.`);
+      else {
+        setAllySquads([]);
+        enemySquadsRef.current = [];
+        setEnemySquads([]);
+      }
+
       wsRef.current = null;
       setConnectionClosed(true);
       setWsState(WebSocket.CLOSED);
       setProtocolReady(false);
       setServerProtocolVersion(undefined);
       setSessionID(undefined);
-      stageInitializationStartedRef.current = false;
+      sessionIDRef.current = null;
+      setMapInfo(undefined);
+      setupRef.current = idleSetup();
+      setSetupPhase("idle");
       pendingCreatesRef.current = [];
-      setAllySquads([]);
-      enemySquadsRef.current = [];
-      setEnemySquads([]);
       setFollowSquadID(null);
       soldiersRef.current = [];
       setSoldiers([]);
@@ -1038,7 +1216,8 @@ export default function GameClient() {
         <SquadCamera controlsRef={controlsRef} focus={followFocus} />
       </Canvas>
 
-      <div className="fixed top-0 left-0 right-80 flex flex-wrap items-start justify-start gap-3 p-3">
+      {/* 로딩 오버레이(z-30)가 덮으면 접속 실패 후 주소를 고치거나 다시 접속할 수 없으므로 그 위에 둔다 */}
+      <div className="fixed top-0 left-0 right-80 z-40 flex flex-wrap items-start justify-start gap-3 p-3">
         <div className="flex items-center gap-2 h-15 rounded-md bg-black/60 px-3 text-white">
           <input
             value={wsUrl}
@@ -1058,7 +1237,13 @@ export default function GameClient() {
           >
             {wsState === WebSocket.OPEN ? "접속 해제" : wsState === WebSocket.CONNECTING ? "접속 중…" : wsState === WebSocket.CLOSING ? "종료 중…" : "접속"}
           </button>
-          {connected && <span className="text-xs text-white/60">{protocolReady ? `V${serverProtocolVersion ?? PROTOCOL_VERSION} · #${sessionID}` : "WELCOME 대기"}</span>}
+          {connected && (
+            <span className="text-xs text-white/60">
+              {protocolReady
+                ? `V${serverProtocolVersion ?? PROTOCOL_VERSION} · #${sessionID}${mapInfo ? ` · map ${mapInfo.mapID}(v${mapInfo.mapVersion})` : ""} · ${SETUP_PHASE_LABEL[setupPhase]}`
+                : "WELCOME 대기"}
+            </span>
+          )}
         </div>
       </div>
 
@@ -1228,7 +1413,15 @@ export default function GameClient() {
         </form>
       </section>
 
-      {phase === "loading" && <LoadingOverlay networkReady={networkReady} assetsReady={assetsReady} disconnected={connectionClosed} />}
+      {phase === "loading" && (
+        <LoadingOverlay
+          networkReady={networkReady}
+          assetsReady={assetsReady}
+          disconnected={connectionClosed}
+          setupLabel={SETUP_PHASE_LABEL[setupPhase]}
+          setupFailed={setupPhase === "failed"}
+        />
+      )}
 
       {phase === "briefing" && stage && <BriefingOverlay stage={stage} squads={displaySquads} onStart={() => setStarted(true)} />}
 
