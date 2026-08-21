@@ -48,19 +48,21 @@ const ARCHER_PROJECTILE_SPEED = 250;
 const ARCHER_PROJECTILE_INTERVAL_SECONDS = 0.85;
 const ARCHER_PROJECTILE_SIZE = [2, 2, 14] as const;
 
-const FIRST_ALLY_SQUAD_ID = 0;
+const DEFAULT_CAMERA_REAR_DISTANCE = 80;
+const DEFAULT_CAMERA_FORMATION_PADDING = 30;
 const SQUAD_CAMERA_REAR_DISTANCE = 72;
 const SQUAD_CAMERA_LOOK_AHEAD_DISTANCE = 72;
 const INITIAL_CAMERA_ANGLE_DEGREES = 42;
 const INITIAL_CAMERA_TARGET_HEIGHT = 5;
 const CAMERA_FOV_DEGREES = 75;
-const CAMERA_PRESET_REVISION = "screenshot-2026-08-21-044950-v1";
+const CAMERA_PRESET_REVISION = "all-allies-forward-x-v2";
 
 /** 목표까지 한 프레임에 좁히는 비율. 값이 작을수록 카메라가 부드럽게 따라간다. */
 const FOLLOW_SMOOTHING = 0.12;
 const FOLLOW_EPSILON = 0.5;
 
 type Focus = { x: number; z: number };
+type Formation = Focus & { radius: number };
 
 type CameraPose = {
   position: { x: number; y: number; z: number };
@@ -71,6 +73,7 @@ type Props = {
   mapID: number;
   soldiers: BattlefieldSoldier[];
   followSquadID: number | null;
+  initialCameraReady: boolean;
   onReady: () => void;
 };
 
@@ -367,6 +370,58 @@ function FollowCamera({ controlsRef, pose }: { controlsRef: RefObject<OrbitContr
   return null;
 }
 
+/** 생존 아군 전체의 평균점과 그 평균점에서 가장 먼 병사까지의 반경. */
+function alliedFormation(soldiers: Soldier[]): Formation | null {
+  const aliveAllies = soldiers.filter(
+    (soldier) => soldier.teamFlag === TEAM_FLAG.ALLY && soldier.hp > 0 && soldier.state !== SOLDIER_STATE.DEAD,
+  );
+  if (aliveAllies.length === 0) return null;
+
+  const total = aliveAllies.reduce(
+    (position, soldier) => ({ x: position.x + soldier.posX, z: position.z + soldier.posY }),
+    { x: 0, z: 0 },
+  );
+  const center = {
+    x: total.x / aliveAllies.length,
+    z: total.z / aliveAllies.length,
+  };
+  const radius = aliveAllies.reduce(
+    (largest, soldier) => Math.max(largest, Math.hypot(soldier.posX - center.x, soldier.posY - center.z)),
+    0,
+  );
+
+  return { ...center, radius };
+}
+
+/** 기본 시점은 아군 전체를 가운데 두고 패킷 전방인 +X를 바라본다. */
+function alliedFormationCameraPose(soldiers: Soldier[], aspect: number): CameraPose | null {
+  const formation = alliedFormation(soldiers);
+  if (!formation) return null;
+
+  const verticalHalfFov = (CAMERA_FOV_DEGREES * Math.PI) / 360;
+  const safeAspect = Math.max(aspect, 0.1);
+  const horizontalHalfFov = Math.atan(Math.tan(verticalHalfFov) * safeAspect);
+  const fittingHalfFov = Math.min(verticalHalfFov, horizontalHalfFov);
+  const baseHeight = Math.tan((INITIAL_CAMERA_ANGLE_DEGREES * Math.PI) / 180) * DEFAULT_CAMERA_REAR_DISTANCE;
+  const baseDistance = Math.hypot(DEFAULT_CAMERA_REAR_DISTANCE, baseHeight);
+  const fittingDistance = (formation.radius + DEFAULT_CAMERA_FORMATION_PADDING) / Math.sin(fittingHalfFov);
+  const cameraDistance = Math.max(baseDistance, fittingDistance);
+  const cameraHeight = Math.sqrt(cameraDistance ** 2 - DEFAULT_CAMERA_REAR_DISTANCE ** 2);
+
+  return {
+    position: {
+      x: formation.x - DEFAULT_CAMERA_REAR_DISTANCE,
+      y: INITIAL_CAMERA_TARGET_HEIGHT + cameraHeight,
+      z: formation.z,
+    },
+    target: {
+      x: formation.x,
+      y: INITIAL_CAMERA_TARGET_HEIGHT,
+      z: formation.z,
+    },
+  };
+}
+
 function selectedSquadCenter(soldiers: Soldier[], squadID: number | null): Focus | null {
   if (squadID === null) return null;
 
@@ -428,23 +483,26 @@ function selectedSquadCameraPose(soldiers: Soldier[], squadID: number | null): C
   };
 }
 
-/** 시작 시점과 소대 카메라 선택 시점에 같은 참고 이미지 구도를 적용한다. */
+/** 배치 완료 후 기본 전군 시점을 한 번 적용하고, 이후에는 선택한 소대 시점만 전환한다. */
 function SquadCameraPreset({
   controlsRef,
   soldiers,
   followSquadID,
+  initialCameraReady,
 }: {
   controlsRef: RefObject<OrbitControlsImpl | null>;
   soldiers: Soldier[];
   followSquadID: number | null;
+  initialCameraReady: boolean;
 }) {
   const camera = useThree((state) => state.camera);
+  const size = useThree((state) => state.size);
   const initialAppliedRef = useRef(false);
   const lastFollowSquadIDRef = useRef<number | null>(null);
   const appliedRevisionRef = useRef<string | null>(null);
 
   useLayoutEffect(() => {
-    if (soldiers.length === 0) {
+    if (!initialCameraReady || soldiers.length === 0) {
       initialAppliedRef.current = false;
       lastFollowSquadIDRef.current = null;
       appliedRevisionRef.current = null;
@@ -459,9 +517,12 @@ function SquadCameraPreset({
 
     if (!revisionChanged && initialAppliedRef.current && lastFollowSquadIDRef.current === followSquadID) return;
 
-    const squadID = followSquadID ?? FIRST_ALLY_SQUAD_ID;
     const controls = controlsRef.current;
-    const pose = selectedSquadCameraPose(soldiers, squadID);
+    const aspect = size.height > 0 ? size.width / size.height : 1;
+    const pose =
+      followSquadID === null
+        ? alliedFormationCameraPose(soldiers, aspect)
+        : selectedSquadCameraPose(soldiers, followSquadID);
     if (!controls || !pose) return;
 
     camera.position.set(pose.position.x, pose.position.y, pose.position.z);
@@ -471,12 +532,12 @@ function SquadCameraPreset({
     initialAppliedRef.current = true;
     lastFollowSquadIDRef.current = followSquadID;
     appliedRevisionRef.current = CAMERA_PRESET_REVISION;
-  }, [camera, controlsRef, followSquadID, soldiers]);
+  }, [camera, controlsRef, followSquadID, initialCameraReady, size.height, size.width, soldiers]);
 
   return null;
 }
 
-export default function GameScene({ mapID, soldiers, followSquadID, onReady }: Props) {
+export default function GameScene({ mapID, soldiers, followSquadID, initialCameraReady, onReady }: Props) {
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
   const followPose = useMemo(() => selectedSquadCameraPose(soldiers, followSquadID), [soldiers, followSquadID]);
 
@@ -502,7 +563,12 @@ export default function GameScene({ mapID, soldiers, followSquadID, onReady }: P
 
       {/* 시선점은 프리셋과 추적 로직에서 한곳에서 관리한다. */}
       <OrbitControls ref={controlsRef} />
-      <SquadCameraPreset controlsRef={controlsRef} soldiers={soldiers} followSquadID={followSquadID} />
+      <SquadCameraPreset
+        controlsRef={controlsRef}
+        soldiers={soldiers}
+        followSquadID={followSquadID}
+        initialCameraReady={initialCameraReady}
+      />
       <FollowCamera controlsRef={controlsRef} pose={followPose} />
     </Canvas>
   );

@@ -114,6 +114,7 @@ export default function GameClient() {
         mapID={stage ? stageMapID(stage) : 0}
         soldiers={session.soldiers}
         followSquadID={followSquadID}
+        initialCameraReady={session.networkReady}
         onReady={handleSceneReady}
       />
 
