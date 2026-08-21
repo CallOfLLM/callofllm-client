@@ -1,0 +1,25 @@
+.frame {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  display: flex;
+  pointer-events: none;
+  user-select: none;
+}
+
+.cap {
+  width: auto;
+  height: 100%;
+  flex: none;
+  object-fit: fill;
+}
+
+.center {
+  position: relative;
+  min-width: 0;
+  flex: 1;
+}
+
+.centerArt {
+  object-fit: fill;
+}

@@ -3,18 +3,20 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import styles from "./NicknameClient.module.css";
 
-const NICKNAME_STORAGE_KEY = "nickname";
+const COMMANDER_NAME_STORAGE_KEY = "nickname";
+const COMMANDER_NAME_LABEL = "지휘관 이름";
 
 export default function NicknameClient() {
   const router = useRouter();
-  const nicknameRef = useRef<HTMLInputElement>(null);
+  const commanderNameRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const savedNickname = localStorage.getItem(NICKNAME_STORAGE_KEY);
+    const savedCommanderName = localStorage.getItem(COMMANDER_NAME_STORAGE_KEY);
 
-    if (savedNickname) {
+    if (savedCommanderName) {
       router.replace("/main");
     }
   }, [router]);
@@ -22,53 +24,119 @@ export default function NicknameClient() {
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    const nickname = nicknameRef.current?.value.trim() ?? "";
+    const commanderName = commanderNameRef.current?.value.trim() ?? "";
 
-    if (!nickname) {
-      setError("닉네임을 입력해 주세요.");
-      nicknameRef.current?.focus();
+    if (!commanderName) {
+      setError(`${COMMANDER_NAME_LABEL}을 입력해 주세요.`);
+      commanderNameRef.current?.focus();
       return;
     }
 
-    localStorage.setItem(NICKNAME_STORAGE_KEY, nickname);
+    localStorage.setItem(COMMANDER_NAME_STORAGE_KEY, commanderName);
     router.push("/main");
   };
 
   return (
-    <main className="flex min-h-dvh relative isolate items-center justify-center bg-slate-950 px-6 text-white">
-      <Image src={"/bg/dt.webp"} fill priority className="-z-10 object-cover object-top-left hidden lg:block" alt="" />
-      <Image src={"/bg/mb.webp"} fill priority className="-z-10 object-cover  object-top block lg:hidden" alt="" />
-      <section className="w-full max-w-md rounded-2xl border border-white/10 bg-white/5 p-8 shadow-2xl backdrop-blur">
-        <p className="mb-2 text-sm font-semibold tracking-[0.24em] text-sky-400">CALL OF LLM</p>
-        <h1 className="text-3xl font-bold">닉네임 설정</h1>
-        <p className="mt-3 text-sm leading-6 text-slate-400">게임에서 사용할 닉네임을 입력해 주세요.</p>
+    <main className={styles.screen}>
+      <Image
+        src="/bg/battlefield.webp"
+        fill
+        sizes="100vw"
+        preload
+        className={styles.background}
+        alt=""
+      />
+      <div className={styles.atmosphere} aria-hidden="true" />
 
-        <form className="mt-8" onSubmit={handleSubmit}>
-          <label htmlFor="nickname" className="mb-2 block text-sm font-medium text-slate-200">
-            닉네임
-          </label>
-          <input
-            ref={nicknameRef}
-            id="nickname"
-            name="nickname"
-            type="text"
-            maxLength={16}
-            autoComplete="nickname"
-            placeholder="닉네임을 입력하세요"
-            aria-describedby={error ? "nickname-error" : undefined}
-            aria-invalid={Boolean(error)}
-            onChange={() => error && setError("")}
-            className="h-12 w-full rounded-lg border border-white/15 bg-black/30 px-4 outline-none transition placeholder:text-slate-600 focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20"
-          />
+      <section className={styles.loginRail} aria-labelledby="commander-name-title">
+        <h1 id="commander-name-title" className={styles.srOnly}>
+          {COMMANDER_NAME_LABEL} 입력
+        </h1>
 
-          {error && (
-            <p id="nickname-error" role="alert" className="mt-2 text-sm text-red-400">
-              {error}
-            </p>
-          )}
+        {error && (
+          <p id="commander-name-error" role="alert" className={styles.error}>
+            {error}
+          </p>
+        )}
 
-          <button type="submit" className="mt-6 h-12 w-full rounded-lg bg-sky-500 font-bold text-slate-950 transition hover:bg-sky-400 active:bg-sky-600">
-            부대 관리로 이동
+        <form className={styles.form} onSubmit={handleSubmit}>
+          <div className={styles.field}>
+            <span className={styles.fieldChrome} aria-hidden="true">
+              <Image
+                src="/ui/pack/panel-slim-left.webp"
+                alt=""
+                width={56}
+                height={72}
+                draggable={false}
+                unoptimized
+                className={styles.fieldCap}
+              />
+              <span className={styles.fieldMiddle}>
+                <Image
+                  src="/ui/pack/panel-slim-center.webp"
+                  alt=""
+                  fill
+                  sizes="(max-width: 640px) 45vw, 22rem"
+                  draggable={false}
+                  unoptimized
+                  className={styles.fieldMiddleArt}
+                />
+              </span>
+              <Image
+                src="/ui/pack/panel-slim-right.webp"
+                alt=""
+                width={56}
+                height={72}
+                draggable={false}
+                unoptimized
+                className={styles.fieldCap}
+              />
+            </span>
+
+            <input
+              ref={commanderNameRef}
+              id="commander-name"
+              name="commanderName"
+              type="text"
+              maxLength={16}
+              autoComplete="nickname"
+              placeholder={`${COMMANDER_NAME_LABEL} 입력`}
+              aria-label={COMMANDER_NAME_LABEL}
+              aria-describedby={error ? "commander-name-error" : undefined}
+              aria-invalid={Boolean(error)}
+              onChange={() => error && setError("")}
+              className={styles.input}
+            />
+            <span className={styles.fieldAccent} aria-hidden="true">
+              <Image
+                src="/ui/pack/accent-blue.webp"
+                alt=""
+                fill
+                sizes="16rem"
+                draggable={false}
+                unoptimized
+                className={styles.fieldAccentArt}
+              />
+            </span>
+          </div>
+
+          <button type="submit" className={styles.submitButton}>
+            <Image
+              src="/ui/pack/status-center.webp"
+              alt=""
+              fill
+              sizes="(max-width: 640px) 136px, 160px"
+              draggable={false}
+              unoptimized
+              className={styles.buttonArt}
+            />
+            <span className={styles.buttonContent}>
+              <span>진입하기</span>
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+                <path d="M14 5h4a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-4" />
+                <path d="m10 8 4 4-4 4M14 12H4" />
+              </svg>
+            </span>
           </button>
         </form>
       </section>

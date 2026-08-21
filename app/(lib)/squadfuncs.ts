@@ -46,8 +46,19 @@ export function deployedCounts(squads: DeploymentSquad[]) {
   );
 }
 
-/** 아군 스쿼드는 맵 왼쪽에 세로로 나눠 세운다. 결과는 SPAWN_BOUNDS 안이다. */
-export function allySpawnPoint(index: number): { spawnX: number; spawnY: number } {
+const MAP_TWO_ALLY_SPAWNS = [
+  { spawnX: 1200, spawnY: 537 },
+  { spawnX: 700, spawnY: 1074 },
+  { spawnX: 1200, spawnY: 1611 },
+  { spawnX: 1200, spawnY: 2148 },
+  { spawnX: 1200, spawnY: 2685 },
+] as const;
+
+/** 아군 스쿼드는 맵 왼쪽의 열린 바닥에 세운다. Map 2는 장애물을 피한 검증 좌표를 쓴다. */
+export function allySpawnPoint(index: number, mapID = 0): { spawnX: number; spawnY: number } {
+  const mapTwoSpawn = MAP_TWO_ALLY_SPAWNS[index];
+  if (mapID === 2 && mapTwoSpawn) return mapTwoSpawn;
+
   const spacing = Math.floor((SPAWN_BOUNDS.maxY - SPAWN_BOUNDS.minY) / (MAX_SQUAD_COUNT + 1));
   return {
     spawnX: 1200,

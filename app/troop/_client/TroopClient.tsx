@@ -4,10 +4,10 @@ import { useEffect, useState } from "react";
 import SelectionButtonPage from "../../_components/SelectionButtonPage";
 import { DEFAULT_GAME_DATA, loadGameData, recruitTroop, saveGameData, TROOP_COST, type GameData, type TroopKey } from "../../(lib)/_gametype";
 
-const TROOP_TYPES: { key: TroopKey; label: string; eyebrow: string; description: string }[] = [
-  { key: "warrior", label: "보병", eyebrow: "INFANTRY", description: "보병을 충원합니다." },
-  { key: "archer", label: "궁수", eyebrow: "ARCHER", description: "궁수를 충원합니다." },
-  { key: "knight", label: "기마병", eyebrow: "CAVALRY", description: "기마병을 충원합니다." },
+const TROOP_TYPES: { key: TroopKey; label: string; eyebrow: string; description: string; icon: string }[] = [
+  { key: "warrior", label: "보병", eyebrow: "INFANTRY", description: "보병을 충원합니다.", icon: "/ui/pack/shield.webp" },
+  { key: "archer", label: "궁수", eyebrow: "ARCHER", description: "궁수를 충원합니다.", icon: "/ui/pack/archer.webp" },
+  { key: "knight", label: "기마병", eyebrow: "CAVALRY", description: "기마병을 충원합니다.", icon: "/ui/pack/cavalry.webp" },
 ];
 
 export default function TroopClient() {
@@ -15,13 +15,15 @@ export default function TroopClient() {
 
   // 로컬스토리지는 서버 렌더 시점에 없으므로 마운트 후에 읽는다.
   useEffect(() => {
-    setGameData(loadGameData());
+    const sync = () => setGameData(loadGameData());
+    sync();
   }, []);
 
-  const items = TROOP_TYPES.map(({ key, label, eyebrow, description }) => ({
+  const items = TROOP_TYPES.map(({ key, label, eyebrow, description, icon }) => ({
     label,
     eyebrow,
     description,
+    icon,
     cost: TROOP_COST[key],
     meta: `보유 ${gameData[key].toLocaleString()}`,
     disabled: gameData.gold < TROOP_COST[key],

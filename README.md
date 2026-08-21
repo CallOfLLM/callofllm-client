@@ -884,8 +884,7 @@ callofllm/
 │   ├── game/
 │   │   ├── _client/
 │   │   │   ├── GameClient.tsx    # 게임·WS·3D·AI 전체 오케스트레이션
-│   │   │   ├── useObjective.ts   # snapshot 기반 목표·패배 판정
-│   │   │   ├── ObjectiveMarkers.tsx
+│   │   │   ├── useObjective.ts   # 서버 STAGE_STATE 기반 승패 판정
 │   │   │   ├── LoadingOverlay.tsx
 │   │   │   ├── BriefingOverlay.tsx
 │   │   │   └── ResultOverlay.tsx

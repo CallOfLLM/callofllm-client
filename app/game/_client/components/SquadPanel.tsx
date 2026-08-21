@@ -1,9 +1,11 @@
 import type { DeploymentSquad } from "../../../(lib)/squadfuncs";
+import styles from "./GameHud.module.css";
 
 type DisplaySquad = DeploymentSquad & { squadID: number | null };
 
 type Props = {
   squads: DisplaySquad[];
+  enemyAliveCount: number | null;
   followSquadID: number | null;
   onFollowSquadToggle: (squadID: number) => void;
 };
@@ -27,18 +29,18 @@ function CameraIcon() {
   );
 }
 
-export default function SquadPanel({ squads, followSquadID, onFollowSquadToggle }: Props) {
-  if (squads.length === 0) return null;
+export default function SquadPanel({ squads, enemyAliveCount, followSquadID, onFollowSquadToggle }: Props) {
+  if (squads.length === 0 && enemyAliveCount === null) return null;
 
   return (
-    <div className="fixed top-3 right-3 flex flex-col gap-1 rounded-lg bg-black/70 px-4 py-3 text-white">
+    <section className={styles.squadPanel} aria-label="부대 현황">
       {squads.map((squad, index) => {
         const following = squad.squadID !== null && followSquadID === squad.squadID;
 
         return (
-          <div key={index} className="flex items-center gap-4 text-sm">
-            <span className="flex w-32 items-center gap-1.5">
-              <span className="truncate font-bold text-sky-300">{squad.name}</span>
+          <div key={index} className={styles.squadRow}>
+            <span className={styles.squadName}>
+              <span>{squad.name}</span>
               <button
                 type="button"
                 onClick={() => {
@@ -47,30 +49,34 @@ export default function SquadPanel({ squads, followSquadID, onFollowSquadToggle 
                 disabled={squad.squadID === null}
                 aria-pressed={following}
                 title={squad.squadID === null ? "출전 후 사용할 수 있습니다" : "카메라로 따라가기"}
-                className={`shrink-0 rounded p-1 transition disabled:cursor-not-allowed ${
-                  following
-                    ? "bg-sky-500 text-slate-950"
-                    : "bg-white/15 text-white hover:bg-white/30 disabled:bg-white/5 disabled:text-white/35"
-                }`}
+                className={`${styles.cameraButton} ${following ? styles.following : ""}`}
               >
                 <CameraIcon />
                 <span className="sr-only">{squad.name} 카메라로 따라가기</span>
               </button>
             </span>
-            <span className="flex gap-3 tabular-nums text-white/85">
+            <span className={styles.squadCounts}>
               <span>
-                보병 <b className="text-white">{squad.warrior}</b>
+                보병 <b>{squad.warrior}</b>
               </span>
               <span>
-                궁병 <b className="text-white">{squad.archer}</b>
+                궁병 <b>{squad.archer}</b>
               </span>
               <span>
-                기병 <b className="text-white">{squad.knight}</b>
+                기병 <b>{squad.knight}</b>
               </span>
             </span>
           </div>
         );
       })}
-    </div>
+      {enemyAliveCount !== null && (
+        <div className={styles.enemyCount} aria-live="polite">
+          <span>적군 생존 병력</span>
+          <span>
+            <b>{enemyAliveCount}</b>명
+          </span>
+        </div>
+      )}
+    </section>
   );
 }

@@ -189,9 +189,10 @@ function buildEnemyStagePackets(stage: StageData): StagePacket[] {
  * 적군은 언제나 스테이지 정의를 따른다.
  */
 export function buildStagePackets(stage: StageData, deployment: StageDeployment | null): StagePacket[] {
+  const mapID = stageMapID(stage);
   const deployedAllies = (deployment?.squads ?? [])
     .filter((squad) => squadSoldierCount(squad) > 0)
-    .map((squad, index) => ({ ...squad, ...allySpawnPoint(index) }));
+    .map((squad, index) => ({ ...squad, ...allySpawnPoint(index, mapID) }));
   const allies = stage.allySquads ?? deployedAllies;
 
   const allyPackets: StagePacket[] = allies.map(({ spawnX, spawnY, ...squad }) => ({

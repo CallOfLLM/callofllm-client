@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { squadSoldierCount } from "../../(lib)/squadfuncs";
+import { stageMapID } from "../../(lib)/stages";
 import CommandChat from "./components/CommandChat";
 import ConnectionBar from "./components/ConnectionBar";
 import GameScene from "./components/GameScene";
 import ObjectivePanel from "./components/ObjectivePanel";
-import SoldierDebugPanel from "./components/SoldierDebugPanel";
 import SquadPanel from "./components/SquadPanel";
 import BriefingOverlay from "./components/overlays/BriefingOverlay";
 import LoadingOverlay from "./components/overlays/LoadingOverlay";
@@ -52,11 +52,7 @@ export default function GameClient() {
     onDisconnected: clearFollowSquad,
   });
 
-  const mission = useObjective(
-    started ? (stage?.objective ?? null) : null,
-    session.soldiers,
-    session.stageStatus?.stageState,
-  );
+  const mission = useObjective(started, session.stageStatus?.stageState);
 
   const phase = getGamePhase(mission.outcome, started, session.networkReady && assetsReady);
   const playing = phase === "playing";
@@ -79,12 +75,11 @@ export default function GameClient() {
     commandReady: session.commandReady,
     serverProtocolVersion: session.serverProtocolVersion,
     stageStatus: session.stageStatus,
-    currentGoal: mission.step?.label ?? null,
+    currentGoal: stage?.objective.label ?? null,
     allySquads: session.allySquads,
     soldiers: session.soldiers,
     allowedCommands: stage?.allowedCommands,
     sendCommand: session.sendCommand,
-    notifyCommand: mission.notifyCommand,
     pushLog: session.pushLog,
   });
 
@@ -116,11 +111,9 @@ export default function GameClient() {
   return (
     <div className="h-dvh w-full">
       <GameScene
+        mapID={stage ? stageMapID(stage) : 0}
         soldiers={session.soldiers}
         followSquadID={followSquadID}
-        condition={mission.step?.condition ?? null}
-        stepOrigin={mission.stepOrigin}
-        fail={stage?.objective.fail}
         onReady={handleSceneReady}
       />
 
@@ -137,24 +130,14 @@ export default function GameClient() {
         onDisconnect={session.disconnect}
       />
 
-      {playing && stage && mission.step && (
-        <ObjectivePanel
-          stage={stage}
-          step={mission.step}
-          stepIndex={mission.stepIndex}
-          stepCount={mission.stepCount}
-          progressRatio={mission.progressRatio}
-          progressLabel={mission.progressLabel}
-          onHintSelect={chat.setChatInput}
-        />
-      )}
+      {playing && stage && <ObjectivePanel stage={stage} onHintSelect={chat.setChatInput} />}
 
       <SquadPanel
         squads={displaySquads}
+        enemyAliveCount={session.stageStatus?.aliveEnemyCount ?? null}
         followSquadID={followSquadID}
         onFollowSquadToggle={toggleFollowSquad}
       />
-      <SoldierDebugPanel soldiers={session.soldiers} />
 
       <CommandChat
         messages={chat.chatMessages}

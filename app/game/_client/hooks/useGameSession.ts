@@ -14,7 +14,6 @@ import {
   STAGE_STATE,
   startStage,
   TEAM_FLAG,
-  type Soldier,
 } from "../../../(lib)/_packet";
 import type { StageDeployment } from "../../../(lib)/squadfuncs";
 import type { StageData } from "../../../(lib)/stages";
@@ -33,6 +32,12 @@ import {
   type PendingCreate,
   type SetupPhase,
 } from "../lib/stageSetup";
+import {
+  soldierKey,
+  unitTypeFromInitialHP,
+  type BattlefieldSoldier,
+  type SoldierUnitType,
+} from "../lib/soldierUnitType";
 
 const DEFAULT_WS_URL = process.env.NEXT_PUBLIC_GAME_WS_URL?.trim() ?? "";
 
@@ -117,6 +122,7 @@ export function useGameSession({ stage, getLatestDeployment, usedFallback, onDis
   const sessionIDRef = useRef<number | null>(null);
   const resumeSessionIDRef = useRef<number | null>(null);
   const protocolReadyRef = useRef(false);
+  const soldierUnitTypesRef = useRef(new Map<string, SoldierUnitType>());
 
   const [wsUrl, setWsUrl] = useState(DEFAULT_WS_URL);
   const [wsState, setWsState] = useState<number>(SOCKET_STATE.CLOSED);
@@ -127,7 +133,7 @@ export function useGameSession({ stage, getLatestDeployment, usedFallback, onDis
   const [mapInfo, setMapInfo] = useState<MapInfo>();
   const [setupPhase, setSetupPhase] = useState<SetupPhase>("idle");
 
-  const [soldiers, setSoldiers] = useState<Soldier[]>([]);
+  const [soldiers, setSoldiers] = useState<BattlefieldSoldier[]>([]);
   const [stageStatus, setStageStatus] = useState<StageStatus>();
   const [allySquads, setAllySquads] = useState<AllySquad[]>([]);
   const [enemySquads, setEnemySquads] = useState<EnemySquad[]>([]);
@@ -137,20 +143,11 @@ export function useGameSession({ stage, getLatestDeployment, usedFallback, onDis
 
   const wsLog = useCallback(
     (label: string, ...details: unknown[]) => {
-      const time = new Date().toISOString().slice(11, 23);
       const readyState = wsRef.current?.readyState;
       const stateName = readyState === undefined ? "NONE" : CONNECTION_STATES[readyState].toUpperCase();
-      console.log(
-        `%c[WS ${time}]%c ${label} %c(${stateName})`,
-        "color:#0af;font-weight:bold",
-        "color:inherit",
-        "color:#888",
-        ...details,
-      );
-
       const detail = summarizeForLog(details[0]);
       const level: GameLogLevel = label.startsWith("SEND") ? "send" : label.startsWith("RECV") ? "recv" : "info";
-      pushLog(level, detail ? `${label} — ${detail}` : label);
+      pushLog(level, detail ? `${label} (${stateName}) — ${detail}` : `${label} (${stateName})`);
     },
     [pushLog],
   );
@@ -262,6 +259,7 @@ export function useGameSession({ stage, getLatestDeployment, usedFallback, onDis
       try {
         if (usedFallback) pushLog("warn", "잘못된 stage 번호라 1번 스테이지를 사용합니다.");
 
+        soldierUnitTypesRef.current.clear();
         const setup = createStageSetup(stage, getLatestDeployment());
         if (!setup.queue.some((packet) => packet.pendingCreate.kind === "ally")) {
           pushLog("warn", "저장된 아군 편성이 없어 적군만 배치합니다. 출정 준비 화면에서 편성해 주세요.");
@@ -318,10 +316,30 @@ export function useGameSession({ stage, getLatestDeployment, usedFallback, onDis
         return;
       }
 
+      const packet = parseServerPacket(event.data);
+      if (packet?.pktType === PKT.SC_SOLDIER_POSITIONS) {
+        // 고빈도 스냅샷의 전체 fields/hex를 콘솔로 보내면 Next 개발 로그 WebSocket이 포화된다.
+        const enemyUnitTypes = new Map(enemySquadsRef.current.map((squad) => [squad.squadID, squad.unitType]));
+        const nextUnitTypes = new Map(soldierUnitTypesRef.current);
+        const battlefieldSoldiers = packet.soldiers.map((soldier): BattlefieldSoldier => {
+          const key = soldierKey(soldier);
+          const enemyUnitType =
+            soldier.teamFlag === TEAM_FLAG.ENEMY ? enemyUnitTypes.get(soldier.squadID) : undefined;
+          const unitType =
+            enemyUnitType ?? nextUnitTypes.get(key) ?? unitTypeFromInitialHP(soldier.hp) ?? "WARRIOR";
+
+          nextUnitTypes.set(key, unitType);
+          return { ...soldier, unitType };
+        });
+
+        soldierUnitTypesRef.current = nextUnitTypes;
+        setSoldiers(battlefieldSoldiers);
+        return;
+      }
+
       const packetDump = dump(event.data);
       wsLog(`RECV (${event.data.byteLength}바이트)`, packetDump);
 
-      const packet = parseServerPacket(event.data);
       if (!packet) {
         pushLog(
           "error",
@@ -331,10 +349,6 @@ export function useGameSession({ stage, getLatestDeployment, usedFallback, onDis
       }
 
       switch (packet.pktType) {
-        case PKT.SC_SOLDIER_POSITIONS:
-          setSoldiers(packet.soldiers);
-          break;
-
         case PKT.SC_WELCOME: {
           setServerProtocolVersion(packet.protocolVersion);
           if (packet.protocolVersion !== PROTOCOL_VERSION) {
@@ -502,6 +516,7 @@ export function useGameSession({ stage, getLatestDeployment, usedFallback, onDis
       if (resumable) {
         pushLog("info", `세션 #${resumeTarget}을 기억해 두었습니다. 다시 접속하면 이어서 진행합니다.`);
       } else {
+        soldierUnitTypesRef.current.clear();
         setAllySquads([]);
         enemySquadsRef.current = [];
         setEnemySquads([]);

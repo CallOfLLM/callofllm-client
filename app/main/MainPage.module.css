@@ -1,0 +1,296 @@
+.screen {
+  --ivory: #ded9ca;
+  --muted: #98a1a5;
+  position: relative;
+  isolation: isolate;
+  min-height: 100dvh;
+  overflow: hidden;
+  background: #03080f;
+  color: var(--ivory);
+}
+
+.backgroundLayer {
+  position: fixed;
+  z-index: -3;
+  inset: 0;
+}
+
+.background {
+  object-fit: cover;
+  object-position: 50% 46%;
+}
+
+.atmosphere {
+  position: fixed;
+  z-index: -2;
+  inset: 0;
+  background:
+    linear-gradient(to top, rgba(2, 7, 13, 0.88) 0, rgba(2, 7, 13, 0.22) 48%, rgba(2, 7, 13, 0.32) 100%),
+    radial-gradient(circle at 50% 42%, transparent 35%, rgba(1, 5, 9, 0.5) 115%);
+  pointer-events: none;
+}
+
+.commandDeck {
+  position: absolute;
+  z-index: 2;
+  right: clamp(1.25rem, 4vw, 4rem);
+  bottom: clamp(1.25rem, 3.5vh, 2.5rem);
+  width: min(55rem, calc(100vw - 2.5rem));
+}
+
+.heading {
+  margin: 0 0 0.9rem;
+  text-align: right;
+  text-shadow: 0 2px 5px rgba(0, 0, 0, 0.9);
+}
+
+.heading p {
+  margin: 0;
+  color: #7fa4bd;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.24em;
+}
+
+.heading h1 {
+  margin: 0.2rem 0 0;
+  color: #f0ecdf;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(1.6rem, 2.3vw, 2.2rem);
+  line-height: 1;
+  letter-spacing: 0.04em;
+}
+
+.heading > span {
+  display: block;
+  margin-top: 0.35rem;
+  color: #a9b0b2;
+  font-size: 0.72rem;
+}
+
+.menuGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+}
+
+.menuItem {
+  display: grid;
+  grid-template-columns: 7.2rem minmax(0, 1fr);
+  align-items: center;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.menuIcon {
+  position: relative;
+  z-index: 2;
+  display: block;
+  width: 7.2rem;
+  aspect-ratio: 1 / 1;
+  filter: drop-shadow(0 8px 13px rgba(0, 0, 0, 0.58));
+  transition: filter 160ms ease, transform 160ms ease;
+}
+
+.menuIconArt {
+  object-fit: contain;
+}
+
+.menuCopy {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  min-width: 0;
+  height: 6rem;
+  align-items: center;
+  margin-left: -1.05rem;
+  padding: 0.7rem 1.7rem 0.65rem 2rem;
+}
+
+.menuFrame {
+  filter: drop-shadow(0 7px 12px rgba(0, 0, 0, 0.5));
+  transition: filter 160ms ease;
+}
+
+.menuCopyContent {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.menuMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.eyebrow {
+  color: #7fa4bd;
+  font-size: 0.54rem;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+}
+
+.pendingLabel {
+  color: #c9857d;
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.menuTitle {
+  overflow: hidden;
+  margin-top: 0.15rem;
+  color: #ece8dc;
+  font-size: 1rem;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+}
+
+.description {
+  overflow: hidden;
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menuAccent {
+  position: absolute;
+  z-index: 2;
+  right: 15%;
+  bottom: -0.18rem;
+  left: 24%;
+  height: 0.48rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+
+.menuAccentArt {
+  object-fit: fill;
+}
+
+.menuItem:hover .menuIcon,
+.menuItem:focus-visible .menuIcon {
+  filter: brightness(1.14) drop-shadow(0 0 7px rgba(85, 145, 185, 0.38))
+    drop-shadow(0 9px 14px rgba(0, 0, 0, 0.58));
+  transform: translateY(-3px);
+}
+
+.menuItem:hover .menuFrame,
+.menuItem:focus-visible .menuFrame {
+  filter: brightness(1.12) drop-shadow(0 0 6px rgba(85, 145, 185, 0.35))
+    drop-shadow(0 7px 12px rgba(0, 0, 0, 0.5));
+}
+
+.menuItem:hover .menuAccent,
+.menuItem:focus-visible .menuAccent {
+  opacity: 1;
+}
+
+.menuItem:focus-visible {
+  outline: 2px solid #b9d2e1;
+  outline-offset: 3px;
+}
+
+.pending .menuIcon {
+  filter: saturate(0.82) drop-shadow(0 8px 13px rgba(0, 0, 0, 0.58));
+}
+
+.pending:hover .menuIcon,
+.pending:focus-visible .menuIcon {
+  filter: brightness(1.1) drop-shadow(0 0 7px rgba(151, 70, 62, 0.4))
+    drop-shadow(0 9px 14px rgba(0, 0, 0, 0.58));
+}
+
+@media (max-width: 700px) {
+  .screen {
+    overflow-y: auto;
+  }
+
+  .background {
+    object-position: 50% 50%;
+  }
+
+  .commandDeck {
+    position: relative;
+    right: auto;
+    bottom: auto;
+    display: flex;
+    width: auto;
+    min-height: 100dvh;
+    flex-direction: column;
+    justify-content: flex-end;
+    padding: 9rem 0.75rem max(1rem, env(safe-area-inset-bottom));
+  }
+
+  .heading {
+    margin-bottom: 0.65rem;
+  }
+
+  .heading h1 {
+    font-size: 1.45rem;
+  }
+
+  .heading > span {
+    margin-top: 0.25rem;
+    font-size: 0.66rem;
+  }
+
+  .menuGrid {
+    grid-template-columns: 1fr;
+    gap: 0.42rem;
+  }
+
+  .menuItem {
+    grid-template-columns: 5.15rem minmax(0, 1fr);
+  }
+
+  .menuIcon {
+    width: 5.15rem;
+  }
+
+  .menuCopy {
+    height: 4.75rem;
+    margin-left: -0.72rem;
+    padding: 0.48rem 1.25rem 0.45rem 1.55rem;
+  }
+
+  .eyebrow,
+  .pendingLabel {
+    font-size: 0.5rem;
+  }
+
+  .menuTitle {
+    font-size: 0.9rem;
+  }
+
+  .description {
+    margin-top: 0.12rem;
+    font-size: 0.62rem;
+  }
+
+  .menuAccent {
+    right: 18%;
+    left: 20%;
+    height: 0.4rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menuIcon,
+  .menuFrame,
+  .menuAccent {
+    transition: none;
+  }
+}

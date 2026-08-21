@@ -30,7 +30,6 @@ export interface UseCommandChatOptions {
   soldiers: readonly Soldier[];
   allowedCommands?: readonly CommandName[];
   sendCommand: SendCommand;
-  notifyCommand: (commandName: CommandName) => void;
   pushLog: GameLogger;
 }
 
@@ -55,7 +54,6 @@ export function useCommandChat({
   soldiers,
   allowedCommands,
   sendCommand,
-  notifyCommand,
   pushLog,
 }: UseCommandChatOptions): UseCommandChatResult {
   const [chatInput, setChatInput] = useState("");
@@ -163,7 +161,6 @@ export function useCommandChat({
         const sent = sendCommand(() => packetDataToBuffer(data.packetData));
         if (sent) {
           pushLog("info", `AI 명령 전송 완료 — ${summarizeForLog(data.packetData)}`);
-          if (typeof packetType === "string") notifyCommand(packetType as CommandName);
         } else {
           pushChatMessage("error", "AI 명령을 만들었지만 게임 서버로 전송하지 못했습니다.");
         }
