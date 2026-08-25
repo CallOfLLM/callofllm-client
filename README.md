@@ -75,7 +75,7 @@ Call of LLM은 일반적인 RTS의 버튼·단축키 중심 조작을 자연어 
 
 ### 2. 검증 가능한 Structured Outputs
 
-OpenAI Responses API의 strict JSON Schema 형식을 사용합니다. 모델 출력은 서버에서 패킷 스키마로 한 번 검증되고, 브라우저에서도 스테이지별 허용 명령과 소유권을 다시 확인한 뒤에만 게임 서버로 전송됩니다.
+OpenAI Responses API의 strict JSON Schema 형식을 사용합니다. 모델 출력은 서버에서 패킷 스키마로 한 번 검증되고, 브라우저에서도 패킷 구조를 다시 확인한 뒤에만 게임 서버로 전송됩니다.
 
 ### 3. 전장 전체를 읽는 적군 전술 AI
 
@@ -234,7 +234,7 @@ flowchart TD
 - 최신 전장 상태가 과거 대화보다 우선합니다.
 - 사용자가 지정한 이름이 여러 스쿼드와 겹치면 어느 스쿼드인지 되묻습니다.
 - 존재하지 않는 스쿼드·병사 ID를 임의로 생성하지 않습니다.
-- 스테이지 1~5에서는 학습하지 않은 명령을 클라이언트가 추가로 차단합니다.
+- 스테이지 1~7에서는 사용자 AI가 지원하는 모든 명령을 동일하게 사용할 수 있습니다.
 - AI 안내 메시지가 생성되더라도 <code>packetData</code>가 <code>null</code>이면 게임 서버에는 아무 명령도 보내지 않습니다.
 
 ## 부대·경제·성장 시스템
@@ -298,16 +298,9 @@ flowchart TD
 | 6 | 평원의 첫 전투 | 적군 전멸 | 플레이어 편성 | 보병 12 | 300 G |
 | 7 | 안개 낀 협곡 | 적군 전멸 | 플레이어 편성 | 보병 28 + 궁수 16 + 기병 4 | 500 G |
 
-### 튜토리얼별 허용 명령
+### 스테이지별 명령 사용
 
-| 스테이지 | 허용 명령 |
-|---:|---|
-| 1 | <code>MOVE_SQUAD</code> |
-| 2 | <code>MOVE_SQUAD</code> |
-| 3 | <code>MOVE_SQUAD</code>, <code>STOP_SQUAD</code> |
-| 4 | <code>MOVE_SQUAD</code>, <code>ATTACK_SQUAD</code>, <code>STOP_SQUAD</code> |
-| 5 | <code>MOVE_SQUAD</code>, <code>ATTACK_SQUAD</code>, <code>STOP_SQUAD</code>, <code>MOVE_ENGAGE_ON_SIGHT</code>, <code>FOCUS_ATTACK</code> |
-| 6~7 | 사용자 AI가 지원하는 전체 명령 |
+스테이지 1~7에서는 [지원 명령](#지원-명령)을 모두 사용할 수 있습니다. 스테이지 진행도에 따른 별도의 명령 제한은 없습니다.
 
 스테이지 3에서는 아군 전체의 중심이 시작점 반경 1,300을 벗어나면 전장 이탈로 즉시 패배합니다. 이동 목표는 개별 병사가 아니라 살아 있는 아군 전체의 중심점을 기준으로 판정합니다.
 
@@ -368,7 +361,7 @@ flowchart LR
 2. 브라우저가 최근 대화, 현재 목표, 아군 이름·ID 표, 전체 병사 스냅샷을 사용자 API에 보냅니다.
 3. Route Handler가 OpenAI Responses API에 strict JSON Schema 응답을 요청합니다.
 4. Route Handler가 모델 출력을 <code>packetDataToBuffer</code>로 검증합니다.
-5. 브라우저가 현재 스테이지의 명령 allowlist를 검사합니다.
+5. 브라우저가 응답 패킷의 구조와 값 범위를 다시 검사합니다.
 6. 검증된 명령을 little-endian V15 바이너리 패킷으로 직렬화합니다.
 7. 외부 게임 서버가 명령을 처리합니다.
 8. 서버가 보낸 다음 전체 스냅샷으로 화면과 목표 상태를 갱신합니다.
@@ -532,7 +525,7 @@ Protocol V15 서버의 기본 세션 보존 시간은 300,000ms이지만, 클라
 | Runtime | Node.js 22 이상 |
 | Deployment | Vercel |
 
-<code>gpt-5-mini</code>는 현재 코드와 <code>.env.example</code>의 기본 모델이며, Responses API와 Structured Outputs를 지원합니다. 모델 기능은 [OpenAI의 GPT-5 mini 공식 문서](https://developers.openai.com/api/docs/models/gpt-5-mini)에서 확인할 수 있습니다.
+사용자 명령 Route Handler는 <code>gpt-5.6-luna</code>와 추론 강도 <code>none</code>을, 적군 전술 Route Handler는 <code>gpt-5.6-terra</code>와 추론 강도 <code>low</code>를 서버 코드에서 각각 고정해 사용합니다. 두 모델 모두 Responses API와 Structured Outputs를 지원합니다. 자세한 기능은 [GPT-5.6 Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna)와 [GPT-5.6 Terra](https://developers.openai.com/api/docs/models/gpt-5.6-terra) 공식 문서에서 확인할 수 있습니다.
 
 ## 로컬 실행
 
@@ -571,7 +564,6 @@ cp .env.example .env.local
 
 ~~~dotenv
 OPENAI_API_KEY=your_openai_api_key
-OPENAI_MODEL=gpt-5-mini
 NEXT_PUBLIC_GAME_WS_URL=wss://your-game-server.example/
 ~~~
 
@@ -603,7 +595,6 @@ npm run start
 | 변수 | 필수 여부 | 노출 범위 | 설명 |
 |---|---|---|---|
 | <code>OPENAI_API_KEY</code> | AI 기능에 필수 | 서버 전용 | 사용자·적군 Route Handler가 OpenAI API를 호출할 때 사용하는 비밀 키 |
-| <code>OPENAI_MODEL</code> | 선택 | 서버 전용 | 사용할 모델 ID. 미설정 시 코드 기본값 <code>gpt-5-mini</code> |
 | <code>NEXT_PUBLIC_GAME_WS_URL</code> | 자동 연결에 선택, 전투에는 WS 서버 필수 | 브라우저 공개 | 외부 Protocol V15 WebSocket 서버 주소 |
 
 ### 주의사항
@@ -612,8 +603,8 @@ npm run start
 - <code>NEXT_PUBLIC_GAME_WS_URL</code>은 브라우저 번들에 포함되는 공개값이므로 비밀을 넣지 마세요.
 - <code>NEXT_PUBLIC_*</code> 값은 빌드 시 클라이언트 번들에 주입됩니다. 배포 환경에서 주소를 바꾸면 다시 빌드·배포해야 합니다.
 - HTTPS 페이지에서는 혼합 콘텐츠 차단을 피하기 위해 공개 접근 가능한 <code>wss://</code> 서버를 사용하세요.
-- 두 OpenAI Route Handler는 같은 <code>OPENAI_MODEL</code>을 사용합니다.
-- 설정한 모델은 Responses API와 strict JSON Schema Structured Outputs를 지원해야 합니다.
+- 모델 ID와 추론 강도는 각 OpenAI Route Handler의 서버 코드에 고정되어 있으며 환경 변수로 덮어쓰지 않습니다.
+- 모델을 바꿀 때는 Responses API와 strict JSON Schema Structured Outputs 지원 여부를 확인하세요.
 
 ## 스크립트
 
@@ -871,7 +862,7 @@ callofllm/
 │   │   ├── _gametype.ts          # 경제, 병력, 공격력, 진행도와 localStorage
 │   │   ├── _packet.ts            # Protocol V15 상수, 스키마, 직렬화·역직렬화
 │   │   ├── squadfuncs.ts         # 출정 편성 저장, 제한, spawn 계산
-│   │   └── stages.ts             # 7개 스테이지, 목표, 배치, 보상, 허용 명령
+│   │   └── stages.ts             # 스테이지 목표, 배치, 보상
 │   ├── _client/
 │   │   └── NicknameClient.tsx    # 닉네임 입력과 저장
 │   ├── _components/
@@ -958,10 +949,9 @@ callofllm/
 2. Node.js 22 이상을 사용하도록 프로젝트 런타임을 확인합니다.
 3. Production, Preview, Development 환경에 필요한 환경 변수를 설정합니다.
 4. <code>OPENAI_API_KEY</code>를 서버 전용 비밀로 등록합니다.
-5. <code>OPENAI_MODEL</code>을 설정하거나 기본 <code>gpt-5-mini</code>를 사용합니다.
-6. <code>NEXT_PUBLIC_GAME_WS_URL</code>에 공개 접근 가능한 <code>wss://</code> V15 서버 주소를 입력합니다.
-7. 빌드와 배포를 실행합니다.
-8. <code>NEXT_PUBLIC_GAME_WS_URL</code>을 바꿨다면 반드시 재배포합니다.
+5. <code>NEXT_PUBLIC_GAME_WS_URL</code>에 공개 접근 가능한 <code>wss://</code> V15 서버 주소를 입력합니다.
+6. 빌드와 배포를 실행합니다.
+7. <code>NEXT_PUBLIC_GAME_WS_URL</code>을 바꿨다면 반드시 재배포합니다.
 
 ### 배포 구조에서 중요한 점
 
@@ -1021,10 +1011,6 @@ OpenAI API 연결, 모델 ID, Responses API·Structured Outputs 지원 여부, �
 ### AI가 명령 대신 질문합니다
 
 스쿼드, 병사, 대상, 거리, 좌표를 현재 전장 상태만으로 하나로 확정할 수 없으면 <code>packetData=null</code>로 되묻는 것이 정상 동작입니다. 스쿼드 이름이나 번호와 원하는 행동을 더 구체적으로 입력하세요.
-
-### “이 스테이지에서는 아직 쓸 수 없는 명령”이 표시됩니다
-
-스테이지 1~5는 튜토리얼별 허용 명령이 제한되어 있습니다. 현재 목표의 예시 명령을 사용하거나 앞의 [튜토리얼별 허용 명령](#튜토리얼별-허용-명령) 표를 확인하세요.
 
 ### 스테이지 6에서 출정할 병력이 없습니다
 
@@ -1098,7 +1084,8 @@ README의 설명은 현재 소스 코드 기준입니다.
 
 - [CLIENT_PACKET_SPEC_V15.md](./CLIENT_PACKET_SPEC_V15.md): 전체 바이너리 패킷 규격, enum, lifecycle, 맵 관계
 - [.env.example](./.env.example): 로컬·배포 환경 변수 예시
-- [OpenAI GPT-5 mini 공식 문서](https://developers.openai.com/api/docs/models/gpt-5-mini): 기본 모델의 API와 Structured Outputs 지원 정보
+- [OpenAI GPT-5.6 Luna 공식 문서](https://developers.openai.com/api/docs/models/gpt-5.6-luna): 사용자 명령 모델의 API와 Structured Outputs 지원 정보
+- [OpenAI GPT-5.6 Terra 공식 문서](https://developers.openai.com/api/docs/models/gpt-5.6-terra): 적군 전술 모델의 API와 Structured Outputs 지원 정보
 
 ### 라이선스
 

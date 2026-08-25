@@ -78,7 +78,6 @@ export default function GameClient() {
     currentGoal: stage?.objective.label ?? null,
     allySquads: session.allySquads,
     soldiers: session.soldiers,
-    allowedCommands: stage?.allowedCommands,
     sendCommand: session.sendCommand,
     pushLog: session.pushLog,
   });

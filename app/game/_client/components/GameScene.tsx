@@ -1,8 +1,25 @@
-import { Box, Environment, OrbitControls, useAnimations, useGLTF } from "@react-three/drei";
+import { Box, Environment, OrbitControls, useAnimations, useGLTF, useTexture } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, type RefObject } from "react";
-import { LoopOnce, LoopRepeat, Vector3, type AnimationAction, type AnimationClip, type Mesh } from "three";
-import { SkeletonUtils, type OrbitControls as OrbitControlsImpl } from "three-stdlib";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, type RefObject } from "react";
+import {
+  EquirectangularReflectionMapping,
+  LoopOnce,
+  LoopRepeat,
+  Matrix4,
+  SRGBColorSpace,
+  Vector3,
+  type AnimationAction,
+  type AnimationClip,
+  type Mesh,
+  type Object3D,
+  type Texture,
+} from "three";
+import {
+  KTX2Loader,
+  SkeletonUtils,
+  type GLTFLoader,
+  type OrbitControls as OrbitControlsImpl,
+} from "three-stdlib";
 import { directionToVector, MAP_BOUNDS, SOLDIER_STATE, TEAM_FLAG, type Soldier } from "../../../(lib)/_packet";
 import { soldierKey, type BattlefieldSoldier, type SoldierUnitType } from "../lib/soldierUnitType";
 
@@ -12,6 +29,7 @@ const MAP_HEIGHT = MAP_BOUNDS.maxY + 1;
 const GROUND_MODEL_URL = "/Ground_optimize.glb";
 const GROUND_MODEL_SCALE = MAP_WIDTH / 640;
 const ENVIRONMENT_URL = "/map/qwantani_dawn_puresky_1k.hdr";
+const SKYBOX_URL = "/map/skybox-day.png";
 const MAP_MODEL_URLS: Record<number, string> = {
   0: GROUND_MODEL_URL,
   1: "/map/Map_001_optimized.glb",
@@ -20,16 +38,41 @@ const MAP_MODEL_URLS: Record<number, string> = {
 };
 
 const SOLDIER_MODEL_URL = "/object/soldier_optimized.glb";
+const KNIGHT_MODEL_URL = "/object/knight_optimized.glb";
+const HORSE_MODEL_URL = "/object/horse_optimized.glb";
+const SWORD_MODEL_URL = "/object/sword_optimized.glb";
+const KTX2_TRANSCODER_PATH = "/basis/";
 const SOLDIER_MODEL_SCALE = 5;
 const SOLDIER_ANIMATION = {
-  WALK: "Walk_Formal_Loop.001_soldier",
-  SPRINT: "Sprint_Loop.001_soldier",
-  DEATH_ONE: "Death01.001_soldier",
-  DEATH_TWO: "Death02_soldier",
-  ATTACK: "Sword_Attack_Standing.001_soldier",
-  IDLE: "Idle_Loop.001_soldier",
+  WALK: "final_soldier_walk",
+  SPRINT: "final_soldier_sprint",
+  DEATH_ONE: "final_soldier_death01",
+  DEATH_TWO: "final_soldier_death02",
+  ATTACK: "final_soldier_attack",
+  IDLE: "final_soldier_idle",
+  RIDE_ATTACK: "final_soldier_ride_attack",
+  RIDE_IDLE: "final_soldier_ride_idle",
 } as const;
-const IN_PLACE_ANIMATION_NAMES = new Set<string>([SOLDIER_ANIMATION.WALK, SOLDIER_ANIMATION.SPRINT]);
+const HORSE_ANIMATION = {
+  GALLOP: "final__horse_galloping",
+  DEATH: "final__horse_Death",
+  WALK: "final__horse_walk",
+  IDLE: "final__horse_idle",
+} as const;
+const IN_PLACE_ANIMATION_NAMES = new Set<string>([
+  SOLDIER_ANIMATION.WALK,
+  SOLDIER_ANIMATION.SPRINT,
+  HORSE_ANIMATION.WALK,
+  HORSE_ANIMATION.GALLOP,
+]);
+const SOLDIER_DEATH_ANIMATION_NAMES = new Set<string>([
+  SOLDIER_ANIMATION.DEATH_ONE,
+  SOLDIER_ANIMATION.DEATH_TWO,
+]);
+const HORSE_DEATH_ANIMATION_NAMES = new Set<string>([HORSE_ANIMATION.DEATH]);
+const WEAPON_ATTACH_BONE = "attach_handl";
+const HORSE_RIDER_ATTACH_BONE = "horse_attach_people";
+const RIDER_ROOT_BONE = "root_refx";
 const ANIMATION_FADE_SECONDS = 0.12;
 
 const IN_PLACE_ANIMATION_CACHE = new WeakMap<AnimationClip[], AnimationClip[]>();
@@ -77,23 +120,81 @@ type Props = {
   onReady: () => void;
 };
 
-function Battlefield({ mapID }: Pick<Props, "mapID">) {
-  const { scene } = useGLTF(MAP_MODEL_URLS[mapID] ?? GROUND_MODEL_URL);
+type ModelAsset = {
+  scene: Object3D;
+  animations: AnimationClip[];
+};
 
+type BattlefieldAssets = {
+  map: Object3D;
+  skybox: Texture;
+  soldier: ModelAsset;
+  knight: ModelAsset;
+  horse: ModelAsset;
+  sword: Object3D;
+};
+
+let ktx2Loader: KTX2Loader | null = null;
+
+function useKtx2LoaderConfiguration() {
+  const renderer = useThree((state) => state.gl);
+  return useCallback(
+    (loader: GLTFLoader) => {
+      if (!ktx2Loader) {
+        ktx2Loader = new KTX2Loader()
+          .setTranscoderPath(KTX2_TRANSCODER_PATH)
+          .detectSupport(renderer);
+      }
+      loader.setKTX2Loader(ktx2Loader);
+    },
+    [renderer],
+  );
+}
+
+function useBattlefieldAssets(mapID: number): BattlefieldAssets {
+  const configureKtx2 = useKtx2LoaderConfiguration();
+  const [map, soldier, knight, horse, sword] = useGLTF(
+    [
+      MAP_MODEL_URLS[mapID] ?? GROUND_MODEL_URL,
+      SOLDIER_MODEL_URL,
+      KNIGHT_MODEL_URL,
+      HORSE_MODEL_URL,
+      SWORD_MODEL_URL,
+    ],
+    false,
+    true,
+    configureKtx2,
+  );
+  const skybox = useTexture(SKYBOX_URL);
+
+  return {
+    map: map.scene,
+    skybox,
+    soldier: { scene: soldier.scene, animations: soldier.animations },
+    knight: { scene: knight.scene, animations: knight.animations },
+    horse: { scene: horse.scene, animations: horse.animations },
+    sword: sword.scene,
+  };
+}
+
+function Battlefield({ scene }: { scene: Object3D }) {
   // 원본 바닥의 X 0..640, Z -320..0을 서버의 X 0..6400,
   // Y 0..3200(Three.js Z축) 좌표계에 맞춘다.
   return <primitive object={scene} scale={[GROUND_MODEL_SCALE, GROUND_MODEL_SCALE, -GROUND_MODEL_SCALE]} />;
 }
 
-/** 바닥과 병사 모델이 모두 준비된 뒤 로딩 화면을 닫는다. */
-function ScenePreloader({ onReady }: Pick<Props, "onReady">) {
-  useGLTF(SOLDIER_MODEL_URL);
+function Skybox({ texture }: { texture: Texture }) {
+  const backgroundTexture = useMemo(() => {
+    const preparedTexture = texture.clone();
+    preparedTexture.mapping = EquirectangularReflectionMapping;
+    preparedTexture.colorSpace = SRGBColorSpace;
+    preparedTexture.needsUpdate = true;
+    return preparedTexture;
+  }, [texture]);
 
-  useEffect(() => {
-    onReady();
-  }, [onReady]);
+  useEffect(() => () => backgroundTexture.dispose(), [backgroundTexture]);
 
-  return null;
+  return <Environment map={backgroundTexture} background="only" />;
 }
 
 function inPlaceAnimations(animations: AnimationClip[]): AnimationClip[] {
@@ -143,37 +244,64 @@ function soldierAnimationName(soldier: Soldier): string {
   }
 }
 
+function mountedRiderAnimationName(soldier: Soldier): string {
+  if (soldier.hp <= 0 || soldier.state === SOLDIER_STATE.DEAD) {
+    return soldier.soldierID % 2 === 0 ? SOLDIER_ANIMATION.DEATH_ONE : SOLDIER_ANIMATION.DEATH_TWO;
+  }
+
+  return soldier.state === SOLDIER_STATE.ATTACKING
+    ? SOLDIER_ANIMATION.RIDE_ATTACK
+    : SOLDIER_ANIMATION.RIDE_IDLE;
+}
+
+function horseAnimationName(soldier: Soldier): string {
+  if (soldier.hp <= 0 || soldier.state === SOLDIER_STATE.DEAD) return HORSE_ANIMATION.DEATH;
+
+  switch (soldier.state) {
+    case SOLDIER_STATE.MOVING:
+    case SOLDIER_STATE.FORMING:
+      return HORSE_ANIMATION.WALK;
+    case SOLDIER_STATE.CHASING:
+      return HORSE_ANIMATION.GALLOP;
+    case SOLDIER_STATE.ATTACKING:
+    case SOLDIER_STATE.IDLE:
+    case SOLDIER_STATE.HIT:
+    default:
+      return HORSE_ANIMATION.IDLE;
+  }
+}
+
 /** Three.js AnimationAction은 명령형 객체라 React 렌더 밖에서 종료 자세 유지 여부를 설정한다. */
 function setClampWhenFinished(action: AnimationAction, clamp: boolean) {
   action.clampWhenFinished = clamp;
 }
 
-function AnimatedSoldier({ soldier }: { soldier: Soldier }) {
-  const { scene, animations } = useGLTF(SOLDIER_MODEL_URL);
-  const clonedScene = useMemo(() => SkeletonUtils.clone(scene), [scene]);
-  const clips = useMemo(() => inPlaceAnimations(animations), [animations]);
-  const animationName = soldierAnimationName(soldier);
+function useActiveAnimation(
+  actions: Record<string, AnimationAction | null>,
+  animationName: string,
+  fallbackName: string,
+  oneShotNames: ReadonlySet<string>,
+) {
   const activeActionRef = useRef<AnimationAction | null>(null);
-  const { actions } = useAnimations(clips, clonedScene);
 
   useEffect(() => {
     let resolvedName = animationName;
     let nextAction = actions[resolvedName];
     if (!nextAction) {
-      resolvedName = SOLDIER_ANIMATION.IDLE;
+      resolvedName = fallbackName;
       nextAction = actions[resolvedName];
     }
     if (!nextAction || (activeActionRef.current === nextAction && nextAction.isRunning())) return;
 
     activeActionRef.current?.fadeOut(ANIMATION_FADE_SECONDS);
-    const deathAnimation = resolvedName === SOLDIER_ANIMATION.DEATH_ONE || resolvedName === SOLDIER_ANIMATION.DEATH_TWO;
+    const oneShot = oneShotNames.has(resolvedName);
 
     nextAction.reset();
-    setClampWhenFinished(nextAction, deathAnimation);
-    nextAction.setLoop(deathAnimation ? LoopOnce : LoopRepeat, deathAnimation ? 1 : Infinity);
+    setClampWhenFinished(nextAction, oneShot);
+    nextAction.setLoop(oneShot ? LoopOnce : LoopRepeat, oneShot ? 1 : Infinity);
     nextAction.setEffectiveTimeScale(1).setEffectiveWeight(1).fadeIn(ANIMATION_FADE_SECONDS).play();
     activeActionRef.current = nextAction;
-  }, [actions, animationName]);
+  }, [actions, animationName, fallbackName, oneShotNames]);
 
   useEffect(
     () => () => {
@@ -182,11 +310,104 @@ function AnimatedSoldier({ soldier }: { soldier: Soldier }) {
     },
     [],
   );
+}
+
+function cloneArmedCharacter(character: Object3D, sword: Object3D) {
+  const clonedCharacter = SkeletonUtils.clone(character);
+  const hand = clonedCharacter.getObjectByName(WEAPON_ATTACH_BONE);
+
+  if (hand) hand.add(sword.clone(true));
+  return clonedCharacter;
+}
+
+function AnimatedSoldier({
+  soldier,
+  model,
+  sword,
+}: {
+  soldier: Soldier;
+  model: ModelAsset;
+  sword: Object3D;
+}) {
+  const clonedScene = useMemo(() => cloneArmedCharacter(model.scene, sword), [model.scene, sword]);
+  const clips = useMemo(() => inPlaceAnimations(model.animations), [model.animations]);
+  const animationName = soldierAnimationName(soldier);
+  const { actions } = useAnimations(clips, clonedScene);
+
+  useActiveAnimation(
+    actions,
+    animationName,
+    SOLDIER_ANIMATION.IDLE,
+    SOLDIER_DEATH_ANIMATION_NAMES,
+  );
 
   return <primitive object={clonedScene} position={[0, 0, 0]} scale={SOLDIER_MODEL_SCALE} />;
 }
 
-function SoldierVisual({ soldier, unitType }: { soldier: Soldier; unitType: SoldierUnitType }) {
+function MountedKnight({
+  soldier,
+  knight,
+  horse,
+  sword,
+}: {
+  soldier: Soldier;
+  knight: ModelAsset;
+  horse: ModelAsset;
+  sword: Object3D;
+}) {
+  const mounted = useMemo(() => {
+    const clonedHorse = SkeletonUtils.clone(horse.scene);
+    const clonedRider = cloneArmedCharacter(knight.scene, sword);
+    const riderAttach = clonedHorse.getObjectByName(HORSE_RIDER_ATTACH_BONE);
+    const riderRoot = clonedRider.getObjectByName(RIDER_ROOT_BONE);
+
+    if (riderAttach) {
+      if (riderRoot) {
+        clonedRider.updateMatrixWorld(true);
+        clonedRider.matrix.copy(new Matrix4().copy(riderRoot.matrixWorld).invert());
+        clonedRider.matrix.decompose(
+          clonedRider.position,
+          clonedRider.quaternion,
+          clonedRider.scale,
+        );
+      }
+      riderAttach.add(clonedRider);
+    } else {
+      clonedHorse.add(clonedRider);
+    }
+
+    return { horse: clonedHorse, rider: clonedRider };
+  }, [horse.scene, knight.scene, sword]);
+  const horseClips = useMemo(() => inPlaceAnimations(horse.animations), [horse.animations]);
+  const riderClips = useMemo(() => inPlaceAnimations(knight.animations), [knight.animations]);
+  const horseActions = useAnimations(horseClips, mounted.horse).actions;
+  const riderActions = useAnimations(riderClips, mounted.rider).actions;
+
+  useActiveAnimation(
+    horseActions,
+    horseAnimationName(soldier),
+    HORSE_ANIMATION.IDLE,
+    HORSE_DEATH_ANIMATION_NAMES,
+  );
+  useActiveAnimation(
+    riderActions,
+    mountedRiderAnimationName(soldier),
+    SOLDIER_ANIMATION.RIDE_IDLE,
+    SOLDIER_DEATH_ANIMATION_NAMES,
+  );
+
+  return <primitive object={mounted.horse} position={[0, 0, 0]} scale={SOLDIER_MODEL_SCALE} />;
+}
+
+function SoldierVisual({
+  soldier,
+  unitType,
+  assets,
+}: {
+  soldier: Soldier;
+  unitType: SoldierUnitType;
+  assets: Pick<BattlefieldAssets, "soldier" | "knight" | "horse" | "sword">;
+}) {
   const color = soldier.hp <= 0 ? DEAD_COLOR : TEAM_COLORS[soldier.teamFlag];
 
   if (unitType === "ARCHER") {
@@ -199,17 +420,10 @@ function SoldierVisual({ soldier, unitType }: { soldier: Soldier; unitType: Sold
   }
 
   if (unitType === "KNIGHT") {
-    return (
-      <mesh position={[0, UNIT_MARKER_Y, 0]}>
-        <cylinderGeometry
-          args={[UNIT_MARKER_SIZE / 2, UNIT_MARKER_SIZE / 2, UNIT_MARKER_HEIGHT, 24]}
-        />
-        <meshStandardMaterial color={color} roughness={0.8} />
-      </mesh>
-    );
+    return <MountedKnight soldier={soldier} knight={assets.knight} horse={assets.horse} sword={assets.sword} />;
   }
 
-  return <AnimatedSoldier soldier={soldier} />;
+  return <AnimatedSoldier soldier={soldier} model={assets.soldier} sword={assets.sword} />;
 }
 
 function directionToRotationY(direction: number) {
@@ -327,7 +541,12 @@ function ArcherProjectiles({ soldiers }: Pick<Props, "soldiers">) {
   ));
 }
 
-function Soldiers({ soldiers }: Pick<Props, "soldiers">) {
+function Soldiers({
+  soldiers,
+  assets,
+}: Pick<Props, "soldiers"> & {
+  assets: Pick<BattlefieldAssets, "soldier" | "knight" | "horse" | "sword">;
+}) {
   return (
     <>
       {soldiers.map((soldier) => {
@@ -336,7 +555,7 @@ function Soldiers({ soldiers }: Pick<Props, "soldiers">) {
         return (
           <group key={key} position={[soldier.posX, 0, soldier.posY]}>
             <group rotation={[0, directionToRotationY(soldier.direction), 0]}>
-              <SoldierVisual soldier={soldier} unitType={soldier.unitType} />
+              <SoldierVisual soldier={soldier} unitType={soldier.unitType} assets={assets} />
             </group>
           </group>
         );
@@ -537,6 +756,23 @@ function SquadCameraPreset({
   return null;
 }
 
+function SceneContents({ mapID, soldiers, onReady }: Pick<Props, "mapID" | "soldiers" | "onReady">) {
+  const assets = useBattlefieldAssets(mapID);
+
+  useEffect(() => {
+    onReady();
+  }, [onReady]);
+
+  return (
+    <>
+      <Environment files={ENVIRONMENT_URL} />
+      <Skybox texture={assets.skybox} />
+      <Battlefield scene={assets.map} />
+      <Soldiers soldiers={soldiers} assets={assets} />
+    </>
+  );
+}
+
 export default function GameScene({ mapID, soldiers, followSquadID, initialCameraReady, onReady }: Props) {
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
   const followPose = useMemo(() => selectedSquadCameraPose(soldiers, followSquadID), [soldiers, followSquadID]);
@@ -547,19 +783,13 @@ export default function GameScene({ mapID, soldiers, followSquadID, initialCamer
       <directionalLight position={[MAP_WIDTH / 2, 4000, MAP_HEIGHT / 2]} />
 
       <Suspense fallback={null}>
-        <Environment files={ENVIRONMENT_URL} background />
-        <Battlefield mapID={mapID} />
-        <ScenePreloader onReady={onReady} />
+        <SceneContents mapID={mapID} soldiers={soldiers} onReady={onReady} />
       </Suspense>
 
       {/* 맵의 (0, 0) 모서리 */}
       <Box position={[0, 2, 0]} args={[20, 4, 20]}>
         <meshStandardMaterial color="black" />
       </Box>
-
-      <Suspense fallback={null}>
-        <Soldiers soldiers={soldiers} />
-      </Suspense>
 
       {/* 시선점은 프리셋과 추적 로직에서 한곳에서 관리한다. */}
       <OrbitControls ref={controlsRef} />

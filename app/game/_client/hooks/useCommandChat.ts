@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { MAP_BOUNDS, PROTOCOL_VERSION, TEAM_FLAG, packetDataToBuffer, type Soldier } from "../../../(lib)/_packet";
-import type { CommandName } from "../../../(lib)/stages";
 import { summarizeForLog, type GameLogger } from "../lib/gameLog";
 import type { AllySquad } from "../lib/stageSetup";
 import type { SendCommand, StageStatus } from "./useGameSession";
@@ -28,7 +27,6 @@ export interface UseCommandChatOptions {
   currentGoal: string | null;
   allySquads: readonly AllySquad[];
   soldiers: readonly Soldier[];
-  allowedCommands?: readonly CommandName[];
   sendCommand: SendCommand;
   pushLog: GameLogger;
 }
@@ -52,7 +50,6 @@ export function useCommandChat({
   currentGoal,
   allySquads,
   soldiers,
-  allowedCommands,
   sendCommand,
   pushLog,
 }: UseCommandChatOptions): UseCommandChatResult {
@@ -150,14 +147,6 @@ export function useCommandChat({
       pushChatMessage("assistant", data.message);
 
       if (data.packetData !== null) {
-        const packetType = (data.packetData as { packetType?: unknown }).packetType;
-
-        // 스테이지에서 아직 배우지 않은 명령은 게임 서버로 전달하지 않는다.
-        if (allowedCommands && !(typeof packetType === "string" && allowedCommands.includes(packetType as CommandName))) {
-          pushChatMessage("error", `이 스테이지에서는 아직 쓸 수 없는 명령입니다. (${String(packetType)})`);
-          return;
-        }
-
         const sent = sendCommand(() => packetDataToBuffer(data.packetData));
         if (sent) {
           pushLog("info", `AI 명령 전송 완료 — ${summarizeForLog(data.packetData)}`);

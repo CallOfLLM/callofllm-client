@@ -3,7 +3,7 @@ import { PACKET_DATA_JSON_SCHEMA, packetDataToBuffer } from "../../../../(lib)/_
 
 export const runtime = "nodejs";
 
-const DEFAULT_MODEL = "gpt-5-mini";
+const USER_COMMAND_MODEL = "gpt-5.6-luna";
 const MAX_MESSAGE_LENGTH = 4_000;
 const MAX_GAME_STATE_LENGTH = 200_000;
 const MAX_HISTORY_LENGTH = 10;
@@ -201,12 +201,12 @@ export async function POST(request: Request) {
     return errorResponse("서버에 OPENAI_API_KEY가 설정되지 않았습니다.", 500);
   }
 
-  const model = process.env.OPENAI_MODEL?.trim() || DEFAULT_MODEL;
   const client = new OpenAI({ apiKey, maxRetries: 1, timeout: 30_000 });
 
   try {
     const response = await client.responses.create({
-      model,
+      model: USER_COMMAND_MODEL,
+      reasoning: { effort: "none" },
       instructions: INSTRUCTIONS,
       input: JSON.stringify({
         history: normalizeHistory(requestBody.history),
