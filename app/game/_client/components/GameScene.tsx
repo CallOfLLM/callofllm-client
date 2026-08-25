@@ -93,12 +93,11 @@ const ARCHER_PROJECTILE_SIZE = [2, 2, 14] as const;
 
 const DEFAULT_CAMERA_REAR_DISTANCE = 80;
 const DEFAULT_CAMERA_FORMATION_PADDING = 30;
-const SQUAD_CAMERA_REAR_DISTANCE = 72;
-const SQUAD_CAMERA_LOOK_AHEAD_DISTANCE = 72;
+const SQUAD_CAMERA_REAR_DISTANCE = 50;
 const INITIAL_CAMERA_ANGLE_DEGREES = 42;
 const INITIAL_CAMERA_TARGET_HEIGHT = 5;
 const CAMERA_FOV_DEGREES = 75;
-const CAMERA_PRESET_REVISION = "all-allies-forward-x-v2";
+const CAMERA_PRESET_REVISION = "squad-centers-fixed-forward-x-v4";
 
 /** 목표까지 한 프레임에 좁히는 비율. 값이 작을수록 카메라가 부드럽게 따라간다. */
 const FOLLOW_SMOOTHING = 0.12;
@@ -565,7 +564,7 @@ function Soldiers({
   );
 }
 
-/** 선택한 소대가 선회해도 참고 이미지의 뒤쪽 구도를 유지하며 따라간다. */
+/** 선택한 소대가 이동해도 게임 기준 후방(-X) 구도를 유지하며 따라간다. */
 function FollowCamera({ controlsRef, pose }: { controlsRef: RefObject<OrbitControlsImpl | null>; pose: CameraPose | null }) {
   const targetRef = useRef(new Vector3());
   const positionRef = useRef(new Vector3());
@@ -589,20 +588,33 @@ function FollowCamera({ controlsRef, pose }: { controlsRef: RefObject<OrbitContr
   return null;
 }
 
-/** 생존 아군 전체의 평균점과 그 평균점에서 가장 먼 병사까지의 반경. */
+/** 생존 아군 소대별 중심을 같은 비중으로 평균하고, 그 중심에서 가장 먼 병사까지의 반경을 구한다. */
 function alliedFormation(soldiers: Soldier[]): Formation | null {
   const aliveAllies = soldiers.filter(
     (soldier) => soldier.teamFlag === TEAM_FLAG.ALLY && soldier.hp > 0 && soldier.state !== SOLDIER_STATE.DEAD,
   );
   if (aliveAllies.length === 0) return null;
 
-  const total = aliveAllies.reduce(
-    (position, soldier) => ({ x: position.x + soldier.posX, z: position.z + soldier.posY }),
+  const squadTotals = new Map<number, { x: number; z: number; count: number }>();
+  for (const soldier of aliveAllies) {
+    const total = squadTotals.get(soldier.squadID) ?? { x: 0, z: 0, count: 0 };
+    total.x += soldier.posX;
+    total.z += soldier.posY;
+    total.count += 1;
+    squadTotals.set(soldier.squadID, total);
+  }
+
+  const squadCenters = Array.from(squadTotals.values(), (total) => ({
+    x: total.x / total.count,
+    z: total.z / total.count,
+  }));
+  const centerTotal = squadCenters.reduce(
+    (total, center) => ({ x: total.x + center.x, z: total.z + center.z }),
     { x: 0, z: 0 },
   );
   const center = {
-    x: total.x / aliveAllies.length,
-    z: total.z / aliveAllies.length,
+    x: centerTotal.x / squadCenters.length,
+    z: centerTotal.z / squadCenters.length,
   };
   const radius = aliveAllies.reduce(
     (largest, soldier) => Math.max(largest, Math.hypot(soldier.posX - center.x, soldier.posY - center.z)),
@@ -645,7 +657,11 @@ function selectedSquadCenter(soldiers: Soldier[], squadID: number | null): Focus
   if (squadID === null) return null;
 
   const aliveSoldiers = soldiers.filter(
-    (soldier) => soldier.teamFlag === TEAM_FLAG.ALLY && soldier.squadID === squadID && soldier.hp > 0,
+    (soldier) =>
+      soldier.teamFlag === TEAM_FLAG.ALLY &&
+      soldier.squadID === squadID &&
+      soldier.hp > 0 &&
+      soldier.state !== SOLDIER_STATE.DEAD,
   );
   if (aliveSoldiers.length === 0) return null;
 
@@ -660,44 +676,25 @@ function selectedSquadCenter(soldiers: Soldier[], squadID: number | null): Focus
   };
 }
 
-function selectedSquadDirection(soldiers: Soldier[], squadID: number): { x: number; y: number } {
-  const direction = soldiers.reduce(
-    (total, soldier) => {
-      if (soldier.teamFlag !== TEAM_FLAG.ALLY || soldier.squadID !== squadID || soldier.hp <= 0) return total;
-
-      const vector = directionToVector(soldier.direction);
-      return { x: total.x + vector.x, y: total.y + vector.y, count: total.count + 1 };
-    },
-    { x: 0, y: 0, count: 0 },
-  );
-  const magnitude = Math.hypot(direction.x, direction.y);
-
-  return direction.count > 0 && magnitude > 0.001
-    ? { x: direction.x / magnitude, y: direction.y / magnitude }
-    : { x: 1, y: 0 };
-}
-
-/** 참고 이미지처럼 소대를 화면 아래에 두고 전방 공간을 확보한 카메라 자세. */
+/** 선택한 소대 중심의 게임 기준 후방(-X)에서 중심 자체를 바라보는 카메라 자세. */
 function selectedSquadCameraPose(soldiers: Soldier[], squadID: number | null): CameraPose | null {
   if (squadID === null) return null;
 
   const center = selectedSquadCenter(soldiers, squadID);
   if (!center) return null;
 
-  const forward = selectedSquadDirection(soldiers, squadID);
-  const cameraTargetDistance = SQUAD_CAMERA_REAR_DISTANCE + SQUAD_CAMERA_LOOK_AHEAD_DISTANCE;
-  const cameraHeight = Math.tan((INITIAL_CAMERA_ANGLE_DEGREES * Math.PI) / 180) * cameraTargetDistance;
+  const cameraHeight = Math.tan((INITIAL_CAMERA_ANGLE_DEGREES * Math.PI) / 180) * SQUAD_CAMERA_REAR_DISTANCE;
 
   return {
     position: {
-      x: center.x - forward.x * SQUAD_CAMERA_REAR_DISTANCE,
+      x: center.x - SQUAD_CAMERA_REAR_DISTANCE,
       y: INITIAL_CAMERA_TARGET_HEIGHT + cameraHeight,
-      z: center.z - forward.y * SQUAD_CAMERA_REAR_DISTANCE,
+      z: center.z,
     },
     target: {
-      x: center.x + forward.x * SQUAD_CAMERA_LOOK_AHEAD_DISTANCE,
+      x: center.x,
       y: INITIAL_CAMERA_TARGET_HEIGHT,
-      z: center.z + forward.y * SQUAD_CAMERA_LOOK_AHEAD_DISTANCE,
+      z: center.z,
     },
   };
 }
