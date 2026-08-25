@@ -1,6 +1,6 @@
 // 출정 준비 화면에서 짠 스쿼드 편성. 로컬스토리지를 통해 게임 화면으로 전달한다.
 
-import { MAX_SQUAD_SIZE, SPAWN_BOUNDS } from "./_packet";
+import { MAP_BOUNDS, MAX_SQUAD_SIZE, SPAWN_BOUNDS } from "./_packet";
 
 export const DEPLOYMENT_STORAGE_KEY = "deployment";
 
@@ -54,8 +54,25 @@ const MAP_TWO_ALLY_SPAWNS = [
   { spawnX: 1200, spawnY: 2685 },
 ] as const;
 
-/** 아군 스쿼드는 맵 왼쪽의 열린 바닥에 세운다. Map 2는 장애물을 피한 검증 좌표를 쓴다. */
+const MAP_ONE_CENTER = {
+  x: Math.floor((MAP_BOUNDS.minX + MAP_BOUNDS.maxX) / 2),
+  y: Math.floor((MAP_BOUNDS.minY + MAP_BOUNDS.maxY) / 2),
+} as const;
+
+/** 맵 1의 장애물을 피해 중앙 전선 가까이에 세우는 최대 5개 소대 앵커. */
+const MAP_ONE_ALLY_SPAWNS = [
+  { spawnX: MAP_ONE_CENTER.x, spawnY: MAP_ONE_CENTER.y },
+  { spawnX: MAP_ONE_CENTER.x + 100, spawnY: MAP_ONE_CENTER.y - 400 },
+  { spawnX: MAP_ONE_CENTER.x + 100, spawnY: MAP_ONE_CENTER.y + 400 },
+  { spawnX: MAP_ONE_CENTER.x + 100, spawnY: MAP_ONE_CENTER.y - 800 },
+  { spawnX: MAP_ONE_CENTER.x + 100, spawnY: MAP_ONE_CENTER.y + 800 },
+] as const;
+
+/** 아군 스쿼드는 각 맵의 열린 바닥에 세운다. 맵 1·2는 장애물을 피한 검증 좌표를 쓴다. */
 export function allySpawnPoint(index: number, mapID = 0): { spawnX: number; spawnY: number } {
+  const mapOneSpawn = MAP_ONE_ALLY_SPAWNS[index];
+  if (mapID === 1 && mapOneSpawn) return mapOneSpawn;
+
   const mapTwoSpawn = MAP_TWO_ALLY_SPAWNS[index];
   if (mapID === 2 && mapTwoSpawn) return mapTwoSpawn;
 

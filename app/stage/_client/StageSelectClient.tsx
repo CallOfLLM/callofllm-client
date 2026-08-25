@@ -6,14 +6,9 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { DEFAULT_GAME_DATA, GAME_DATA_UPDATED_EVENT, loadGameData } from "../../(lib)/_gametype";
-import { isStageAvailable, isTutorialStage, STAGES, type StageData } from "../../(lib)/stages";
+import { isStageAvailable, isTutorialStage, STAGES } from "../../(lib)/stages";
 import UiPanelFrame from "../../_components/UiPanelFrame";
 import styles from "./StageSelectClient.module.css";
-
-/** 튜토리얼은 편성이 고정이라 준비 화면을 건너뛰고 바로 전장으로 간다. */
-function stageHref(stage: StageData) {
-  return isTutorialStage(stage) ? `/game?stage=${stage.id}` : `/stage/ready?stage=${stage.id}`;
-}
 
 export default function StageSelectClient() {
   const [clearedStage, setClearedStage] = useState(DEFAULT_GAME_DATA.clearedStage);
@@ -82,7 +77,7 @@ export default function StageSelectClient() {
         return available ? (
           <Link
             key={stage.id}
-            href={stageHref(stage)}
+            href={`/stage/ready?stage=${stage.id}`}
             className={`${styles.item} ${cleared ? styles.cleared : ""}`}
           >
             {content}

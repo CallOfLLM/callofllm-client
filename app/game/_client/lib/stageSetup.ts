@@ -141,16 +141,16 @@ function buildEnemyStagePackets(stage: StageData): StagePacket[] {
   });
 }
 
-/**
- * 튜토리얼은 스테이지의 고정 편성을, 일반 스테이지는 준비 화면에서 저장한 편성을 쓴다.
- * 적군은 언제나 스테이지 정의를 따른다.
- */
+/** 아군은 준비 화면에서 저장한 플레이어 편성을, 적군은 스테이지 정의를 따른다. */
 export function buildStagePackets(stage: StageData, deployment: StageDeployment | null): StagePacket[] {
   const mapID = stageMapID(stage);
-  const deployedAllies = (deployment?.squads ?? [])
+  const allies = (deployment?.squads ?? [])
     .filter((squad) => squadSoldierCount(squad) > 0)
     .map((squad, index) => ({ ...squad, ...allySpawnPoint(index, mapID) }));
-  const allies = stage.allySquads ?? deployedAllies;
+
+  if (allies.length === 0) {
+    throw new Error("출정 준비 화면에서 아군을 한 명 이상 편성해 주세요.");
+  }
 
   const allyPackets: StagePacket[] = allies.map(({ spawnX, spawnY, ...squad }) => ({
     label: squad.name,

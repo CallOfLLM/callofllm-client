@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { squadSoldierCount } from "../../(lib)/squadfuncs";
 import { stageMapID } from "../../(lib)/stages";
@@ -27,6 +28,7 @@ function getGamePhase(outcome: Outcome, started: boolean, ready: boolean): GameP
 }
 
 export default function GameClient() {
+  const router = useRouter();
   const {
     stage,
     deployment,
@@ -39,6 +41,12 @@ export default function GameClient() {
   const [assetsReady, setAssetsReady] = useState(false);
   const [started, setStarted] = useState(false);
   const [followSquadID, setFollowSquadID] = useState<number | null>(null);
+  const hasDeployedArmy = deployment?.squads.some((squad) => squadSoldierCount(squad) > 0) ?? false;
+
+  useEffect(() => {
+    if (!stage || hasDeployedArmy) return;
+    router.replace(`/stage/ready?stage=${stage.id}`);
+  }, [hasDeployedArmy, router, stage]);
 
   const clearFollowSquad = useCallback(() => setFollowSquadID(null), []);
   const toggleFollowSquad = useCallback((squadID: number) => {
@@ -46,7 +54,7 @@ export default function GameClient() {
   }, []);
 
   const session = useGameSession({
-    stage,
+    stage: hasDeployedArmy ? stage : null,
     getLatestDeployment,
     usedFallback,
     onDisconnected: clearFollowSquad,

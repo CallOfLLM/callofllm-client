@@ -33,7 +33,7 @@ export default function ResultOverlay({ clear, reason, stageID, stageTitle, awar
 
         <div className={styles.actions}>
           {nextHref && (
-            // 같은 /game 경로의 다음 튜토리얼도 모든 게임 상태를 새로 만들도록 전체 이동한다.
+            // 다음 스테이지의 출정 준비 화면으로 이동하며 현재 게임 상태를 모두 버린다.
             <a href={nextHref} className={styles.primaryButton}>
               다음 스테이지
             </a>

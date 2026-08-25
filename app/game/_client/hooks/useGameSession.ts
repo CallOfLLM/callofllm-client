@@ -261,9 +261,6 @@ export function useGameSession({ stage, getLatestDeployment, usedFallback, onDis
 
         soldierUnitTypesRef.current.clear();
         const setup = createStageSetup(stage, getLatestDeployment());
-        if (!setup.queue.some((packet) => packet.pendingCreate.kind === "ally")) {
-          pushLog("warn", "저장된 아군 편성이 없어 적군만 배치합니다. 출정 준비 화면에서 편성해 주세요.");
-        }
 
         pendingCreatesRef.current = [];
         setAllySquads([]);

@@ -1,4 +1,4 @@
-// 스테이지 정의 — 선택 화면 메타, 아군/적군 초기 배치, 승패 조건을 한곳에서 관리한다.
+// 스테이지 정의 — 선택 화면 메타, 적군 초기 배치, 승패 조건을 한곳에서 관리한다.
 // squadID는 서버가 팀별로 0부터 발급하므로 여기에 넣지 않는다.
 
 import {
@@ -8,7 +8,7 @@ import {
   SPAWN_BOUNDS,
 } from "./_packet";
 
-/** 맵 정중앙. 고정 아군의 배치 앵커다. */
+/** 맵 정중앙. 공통 적군 배치의 기준점이다. */
 export const MAP_CENTER = {
   x: Math.floor((MAP_BOUNDS.minX + MAP_BOUNDS.maxX) / 2),
   y: Math.floor((MAP_BOUNDS.minY + MAP_BOUNDS.maxY) / 2),
@@ -32,16 +32,6 @@ export interface EnemySquadData {
   spawnY: number;
 }
 
-/** 준비 화면을 건너뛰고 사용할 고정 아군 스쿼드. */
-export interface FixedAllySquad {
-  name: string;
-  warrior: number;
-  archer: number;
-  knight: number;
-  spawnX: number;
-  spawnY: number;
-}
-
 export interface Objective {
   /** 전투 중 화면에 띄울 목표 */
   label: string;
@@ -53,23 +43,18 @@ export interface StageData {
   id: number;
   title: string;
   description: string;
+  /** 전투 도움말과 예시 명령을 노출할 튜토리얼 스테이지인지 여부 */
+  tutorial: boolean;
   /**
    * SELECT_MAP으로 보낼 서버 맵 ID. 생략하면 장애물이 없는 내장 sandbox(0)를 쓴다.
    * 외부 JSON 맵(1~3)으로 바꿀 때는 아래 spawn 좌표가 그 맵의 WALL 셀이 아닌지 먼저 확인해야 한다.
    * WALL이면 서버가 CREATE_SQUAD를 INVALID_PAYLOAD(-1)로 거절한다.
    */
   mapID?: number;
-  /** 있으면 준비 화면을 건너뛰고 이 편성을 그대로 배치한다. 없으면 준비 화면 편성을 쓴다. */
-  allySquads?: FixedAllySquad[];
   enemySquads: EnemySquadData[];
   objective: Objective;
   /** 첫 클리어 시 지급하는 골드 */
   rewardGold: number;
-}
-
-/** Map 1 중앙의 검증된 바닥 좌표에 고정 아군을 배치한다. */
-function centerSquad(warrior: number, archer = 0, knight = 0): FixedAllySquad {
-  return { name: "1소대", warrior, archer, knight, spawnX: MAP_CENTER.x, spawnY: MAP_CENTER.y };
 }
 
 function infantrySquad(count: number, spawnX: number, spawnY: number): EnemySquadData {
@@ -81,9 +66,9 @@ function stageOneCopy(id: number): StageData {
   return {
     id,
     title: "이동과 첫 공격",
-    description: "고정 부대로 이동과 공격 명령을 사용해 소규모 전투를 마무리하세요.",
+    description: "직접 편성한 보유 부대로 이동과 공격 명령을 사용해 소규모 전투를 마무리하세요.",
+    tutorial: true,
     mapID: PLAYABLE_MAP_ID,
-    allySquads: [centerSquad(20)],
     enemySquads: [infantrySquad(10, MAP_CENTER.x + NEARBY_ENEMY_FORWARD_OFFSET, MAP_CENTER.y)],
     objective: {
       label: "적군 10명을 모두 처치하세요. 적군이 전멸하면 즉시 클리어됩니다.",
@@ -103,9 +88,6 @@ function validateStages(stages: StageData[]) {
     if (stage.id !== index + 1) throw new Error(`스테이지 ID는 1부터 연속이어야 합니다. index=${index}`);
     if (stage.mapID !== PLAYABLE_MAP_ID) {
       throw new Error(`STAGE ${stage.id}는 임시 플레이 맵 ${PLAYABLE_MAP_ID}을 사용해야 합니다.`);
-    }
-    if (!stage.allySquads || stage.allySquads.length === 0) {
-      throw new Error(`STAGE ${stage.id}에 고정 아군 스쿼드가 필요합니다.`);
     }
     if (stage.enemySquads.length === 0 || stage.enemySquads.length > MAX_ENEMY_AI_SQUADS) {
       throw new Error(`STAGE ${stage.id} 적군 스쿼드는 1..${MAX_ENEMY_AI_SQUADS}개여야 합니다.`);
@@ -150,7 +132,7 @@ export function isStageAvailable(stageID: number, clearedStage: number): boolean
   return stageID <= clearedStage + 1;
 }
 
-/** 고정 편성 스테이지는 준비 화면을 거치지 않는다. */
+/** 튜토리얼 안내 여부는 아군 편성 방식과 독립적으로 관리한다. */
 export function isTutorialStage(stage: StageData): boolean {
-  return stage.allySquads !== undefined;
+  return stage.tutorial;
 }

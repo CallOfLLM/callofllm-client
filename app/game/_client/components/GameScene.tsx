@@ -77,19 +77,12 @@ const ANIMATION_FADE_SECONDS = 0.12;
 
 const IN_PLACE_ANIMATION_CACHE = new WeakMap<AnimationClip[], AnimationClip[]>();
 
-const TEAM_COLORS = {
-  [TEAM_FLAG.ALLY]: "#3b82f6",
-  [TEAM_FLAG.ENEMY]: "#ef4444",
-} as const;
-const DEAD_COLOR = "#4b5563";
-const UNIT_MARKER_SIZE = 10;
-const UNIT_MARKER_HEIGHT = 1;
-const UNIT_MARKER_Y = UNIT_MARKER_HEIGHT / 2;
 const ARCHER_ATTACK_RANGE = 150;
 const ARCHER_PROJECTILE_HEIGHT = 5;
 const ARCHER_PROJECTILE_SPEED = 250;
 const ARCHER_PROJECTILE_INTERVAL_SECONDS = 0.85;
 const ARCHER_PROJECTILE_SIZE = [2, 2, 14] as const;
+const ARCHER_PROJECTILE_COLOR = "#000000";
 
 const DEFAULT_CAMERA_REAR_DISTANCE = 80;
 const DEFAULT_CAMERA_FORMATION_PADDING = 30;
@@ -407,21 +400,11 @@ function SoldierVisual({
   unitType: SoldierUnitType;
   assets: Pick<BattlefieldAssets, "soldier" | "knight" | "horse" | "sword">;
 }) {
-  const color = soldier.hp <= 0 ? DEAD_COLOR : TEAM_COLORS[soldier.teamFlag];
-
-  if (unitType === "ARCHER") {
-    return (
-      <mesh position={[0, UNIT_MARKER_Y, 0]}>
-        <boxGeometry args={[UNIT_MARKER_SIZE, UNIT_MARKER_HEIGHT, UNIT_MARKER_SIZE]} />
-        <meshStandardMaterial color={color} roughness={0.8} />
-      </mesh>
-    );
-  }
-
   if (unitType === "KNIGHT") {
     return <MountedKnight soldier={soldier} knight={assets.knight} horse={assets.horse} sword={assets.sword} />;
   }
 
+  // 궁수도 별도 임시 마커 대신 보병과 같은 솔져 모델과 애니메이션을 사용한다.
   return <AnimatedSoldier soldier={soldier} model={assets.soldier} sword={assets.sword} />;
 }
 
@@ -503,12 +486,10 @@ function ArcherProjectile({
     projectile.position.lerpVectors(startRef.current, destinationRef.current, progress);
   });
 
-  const color = TEAM_COLORS[archer.teamFlag];
-
   return (
     <mesh ref={projectileRef} position={[archer.posX, ARCHER_PROJECTILE_HEIGHT, archer.posY]}>
       <boxGeometry args={ARCHER_PROJECTILE_SIZE} />
-      <meshBasicMaterial color={color} />
+      <meshBasicMaterial color={ARCHER_PROJECTILE_COLOR} />
     </mesh>
   );
 }
