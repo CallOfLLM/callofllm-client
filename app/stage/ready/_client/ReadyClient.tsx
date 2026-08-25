@@ -2,11 +2,11 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   createEmptySquad,
   deployedCounts,
-  loadDeployment,
+  loadSavedDeployment,
   MAX_SQUAD_COUNT,
   MAX_SQUAD_SOLDIERS,
   saveDeployment,
@@ -34,26 +34,27 @@ export default function ReadyClient({ stageID, stageTitle }: ReadyClientProps) {
   const router = useRouter();
   const [gameData, setGameData] = useState<GameData>(DEFAULT_GAME_DATA);
   const [squads, setSquads] = useState<DeploymentSquad[]>([createEmptySquad(0)]);
-  const loadedRef = useRef(false);
+  const [hydratedStageID, setHydratedStageID] = useState<number | null>(null);
 
-  // 로컬스토리지는 서버 렌더 시점에 없으므로 마운트 후에 읽는다.
+  // 마지막 편성을 다음 스테이지에서도 재사용하고, 없으면 빈 스쿼드 하나로 시작한다.
   useEffect(() => {
-    const hydrate = () => {
-      setGameData(loadGameData());
+    const timeoutID = window.setTimeout(() => {
+      const saved = loadSavedDeployment();
 
-      const saved = loadDeployment(stageID);
-      if (saved && saved.squads.length > 0) setSquads(saved.squads);
-      loadedRef.current = true;
-    };
-    hydrate();
+      setGameData(loadGameData());
+      setSquads(saved && saved.squads.length > 0 ? saved.squads : [createEmptySquad(0)]);
+      setHydratedStageID(stageID);
+    }, 0);
+
+    return () => window.clearTimeout(timeoutID);
   }, [stageID]);
 
   // 편성을 바꿀 때마다 저장해 두면 게임 화면이 그대로 읽어 간다.
   // 병력 0인 스쿼드는 생성되지 않으므로 저장에서도 빼야 게임 화면의 순서·이름과 어긋나지 않는다.
   useEffect(() => {
-    if (!loadedRef.current) return;
+    if (hydratedStageID !== stageID) return;
     saveDeployment({ stageID, squads: squads.filter((squad) => squadSoldierCount(squad) > 0) });
-  }, [stageID, squads]);
+  }, [hydratedStageID, stageID, squads]);
 
   const applyEdit = (nextSquads: DeploymentSquad[]) => setSquads(nextSquads);
 
@@ -113,7 +114,7 @@ export default function ReadyClient({ stageID, stageTitle }: ReadyClientProps) {
     <GameSelectionShell
       eyebrow={`STAGE ${stageID} · BATTLE READY`}
       title={`출정 준비 — ${stageTitle}`}
-      description={`스쿼드에 병력을 배치한 뒤 출정하세요. 스쿼드당 최대 ${MAX_SQUAD_SOLDIERS}명입니다.`}
+      description={`마지막 편성이 있으면 자동으로 불러옵니다. 스쿼드당 최대 ${MAX_SQUAD_SOLDIERS}명입니다.`}
       backHref="/stage"
       backLabel="스테이지 선택"
     >

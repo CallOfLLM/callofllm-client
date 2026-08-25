@@ -97,8 +97,8 @@ export function saveDeployment(deployment: StageDeployment): void {
   localStorage.setItem(DEPLOYMENT_STORAGE_KEY, JSON.stringify(deployment));
 }
 
-/** 저장값이 없거나 다른 스테이지의 편성이거나 형식이 깨졌으면 null. 브라우저에서만 호출한다. */
-export function loadDeployment(stageID: number): StageDeployment | null {
+/** 마지막으로 저장된 편성을 스테이지와 관계없이 읽는다. 출정 준비 화면에서 재사용한다. */
+export function loadSavedDeployment(): StageDeployment | null {
   try {
     const raw = localStorage.getItem(DEPLOYMENT_STORAGE_KEY);
     if (!raw) return null;
@@ -107,16 +107,24 @@ export function loadDeployment(stageID: number): StageDeployment | null {
     if (typeof parsed !== "object" || parsed === null) return null;
 
     const deployment = parsed as Record<string, unknown>;
-    if (deployment.stageID !== stageID) return null;
+    if (typeof deployment.stageID !== "number" || !Number.isInteger(deployment.stageID) || deployment.stageID < 1) {
+      return null;
+    }
     if (!Array.isArray(deployment.squads) || !deployment.squads.every(isValidSquad)) return null;
 
-    return { stageID, squads: deployment.squads.slice(0, MAX_SQUAD_COUNT) };
+    return { stageID: deployment.stageID, squads: deployment.squads.slice(0, MAX_SQUAD_COUNT) };
   } catch {
     return null;
   }
 }
 
-/** 전투가 끝나 편성을 버릴 때 호출한다. 브라우저에서만 호출한다. */
+/** 현재 스테이지용으로 확정 저장된 편성만 읽는다. 게임 화면의 잘못된 직접 입장을 막는다. */
+export function loadDeployment(stageID: number): StageDeployment | null {
+  const deployment = loadSavedDeployment();
+  return deployment?.stageID === stageID ? deployment : null;
+}
+
+/** 로그아웃처럼 저장된 편성을 완전히 초기화할 때 호출한다. 브라우저에서만 호출한다. */
 export function clearDeployment(): void {
   localStorage.removeItem(DEPLOYMENT_STORAGE_KEY);
 }
