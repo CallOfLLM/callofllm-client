@@ -10,7 +10,7 @@ import {
   Vector3,
   type AnimationAction,
   type AnimationClip,
-  type Mesh,
+  type Group,
   type Object3D,
   type Texture,
 } from "three";
@@ -41,6 +41,7 @@ const SOLDIER_MODEL_URL = "/object/soldier_optimized.glb";
 const KNIGHT_MODEL_URL = "/object/knight_optimized.glb";
 const HORSE_MODEL_URL = "/object/horse_optimized.glb";
 const SWORD_MODEL_URL = "/object/sword_optimized.glb";
+const ARROW_MODEL_URL = "/object/Arrow_optimized.glb";
 const KTX2_TRANSCODER_PATH = "/basis/";
 const SOLDIER_MODEL_SCALE = 5;
 const SOLDIER_ANIMATION = {
@@ -81,8 +82,8 @@ const ARCHER_ATTACK_RANGE = 150;
 const ARCHER_PROJECTILE_HEIGHT = 5;
 const ARCHER_PROJECTILE_SPEED = 250;
 const ARCHER_PROJECTILE_INTERVAL_SECONDS = 0.85;
-const ARCHER_PROJECTILE_SIZE = [2, 2, 14] as const;
-const ARCHER_PROJECTILE_COLOR = "#000000";
+const ARCHER_PROJECTILE_MODEL_SCALE = 13;
+const ARCHER_PROJECTILE_MODEL_ROTATION_X = Math.PI / 2;
 
 const DEFAULT_CAMERA_REAR_DISTANCE = 80;
 const DEFAULT_CAMERA_FORMATION_PADDING = 30;
@@ -124,6 +125,7 @@ type BattlefieldAssets = {
   knight: ModelAsset;
   horse: ModelAsset;
   sword: Object3D;
+  arrow: Object3D;
 };
 
 let ktx2Loader: KTX2Loader | null = null;
@@ -145,13 +147,14 @@ function useKtx2LoaderConfiguration() {
 
 function useBattlefieldAssets(mapID: number): BattlefieldAssets {
   const configureKtx2 = useKtx2LoaderConfiguration();
-  const [map, soldier, knight, horse, sword] = useGLTF(
+  const [map, soldier, knight, horse, sword, arrow] = useGLTF(
     [
       MAP_MODEL_URLS[mapID] ?? GROUND_MODEL_URL,
       SOLDIER_MODEL_URL,
       KNIGHT_MODEL_URL,
       HORSE_MODEL_URL,
       SWORD_MODEL_URL,
+      ARROW_MODEL_URL,
     ],
     false,
     true,
@@ -166,6 +169,7 @@ function useBattlefieldAssets(mapID: number): BattlefieldAssets {
     knight: { scene: knight.scene, animations: knight.animations },
     horse: { scene: horse.scene, animations: horse.animations },
     sword: sword.scene,
+    arrow: arrow.scene,
   };
 }
 
@@ -439,16 +443,19 @@ function nearestLivingOpponent(
 function ArcherProjectile({
   archer,
   target,
+  arrow,
 }: {
   archer: BattlefieldSoldier;
   target: BattlefieldSoldier;
+  arrow: Object3D;
 }) {
-  const projectileRef = useRef<Mesh | null>(null);
+  const projectileRef = useRef<Group | null>(null);
   const startedAtRef = useRef<number | null>(null);
   const cycleIndexRef = useRef(-1);
   const startRef = useRef(new Vector3());
   const destinationRef = useRef(new Vector3());
   const travelSecondsRef = useRef(0);
+  const clonedArrow = useMemo(() => arrow.clone(true), [arrow]);
 
   useFrame(({ clock }) => {
     const projectile = projectileRef.current;
@@ -487,14 +494,18 @@ function ArcherProjectile({
   });
 
   return (
-    <mesh ref={projectileRef} position={[archer.posX, ARCHER_PROJECTILE_HEIGHT, archer.posY]}>
-      <boxGeometry args={ARCHER_PROJECTILE_SIZE} />
-      <meshBasicMaterial color={ARCHER_PROJECTILE_COLOR} />
-    </mesh>
+    <group ref={projectileRef} position={[archer.posX, ARCHER_PROJECTILE_HEIGHT, archer.posY]}>
+      <primitive
+        object={clonedArrow}
+        rotation={[ARCHER_PROJECTILE_MODEL_ROTATION_X, 0, 0]}
+        scale={ARCHER_PROJECTILE_MODEL_SCALE}
+        dispose={null}
+      />
+    </group>
   );
 }
 
-function ArcherProjectiles({ soldiers }: Pick<Props, "soldiers">) {
+function ArcherProjectiles({ soldiers, arrow }: Pick<Props, "soldiers"> & { arrow: Object3D }) {
   const shots = useMemo(
     () =>
       soldiers.flatMap((archer) => {
@@ -517,6 +528,7 @@ function ArcherProjectiles({ soldiers }: Pick<Props, "soldiers">) {
       key={soldierKey(archer)}
       archer={archer}
       target={target}
+      arrow={arrow}
     />
   ));
 }
@@ -525,7 +537,7 @@ function Soldiers({
   soldiers,
   assets,
 }: Pick<Props, "soldiers"> & {
-  assets: Pick<BattlefieldAssets, "soldier" | "knight" | "horse" | "sword">;
+  assets: Pick<BattlefieldAssets, "soldier" | "knight" | "horse" | "sword" | "arrow">;
 }) {
   return (
     <>
@@ -540,7 +552,7 @@ function Soldiers({
           </group>
         );
       })}
-      <ArcherProjectiles soldiers={soldiers} />
+      <ArcherProjectiles soldiers={soldiers} arrow={assets.arrow} />
     </>
   );
 }
