@@ -3,7 +3,14 @@
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { DEFAULT_GAME_DATA, GAME_DATA_UPDATED_EVENT, loadGameData, type GameData } from "../(lib)/_gametype";
+import {
+  clearGameData,
+  DEFAULT_GAME_DATA,
+  GAME_DATA_UPDATED_EVENT,
+  loadGameData,
+  type GameData,
+} from "../(lib)/_gametype";
+import { clearDeployment } from "../(lib)/squadfuncs";
 import UiPanelFrame from "./UiPanelFrame";
 import hudStyles from "./CommandHeader.module.css";
 
@@ -39,6 +46,8 @@ export default function CommandHeader({ variant = "default" }: CommandHeaderProp
 
   const logout = () => {
     localStorage.removeItem(NICKNAME_STORAGE_KEY);
+    clearGameData();
+    clearDeployment();
     router.replace("/");
   };
 

@@ -70,6 +70,12 @@ export function saveGameData(data: GameData): void {
   window.dispatchEvent(new Event(GAME_DATA_UPDATED_EVENT));
 }
 
+/** 로그아웃할 때 저장된 성장 기록을 지우고 구독 중인 UI를 기본값으로 갱신한다. */
+export function clearGameData(): void {
+  localStorage.removeItem(GAME_DATA_STORAGE_KEY);
+  window.dispatchEvent(new Event(GAME_DATA_UPDATED_EVENT));
+}
+
 /** 골드가 모자라면 null, 충분하면 골드를 차감하고 병력을 1 늘린 새 데이터를 돌려준다. */
 export function recruitTroop(data: GameData, troop: TroopKey): GameData | null {
   const cost = TROOP_COST[troop];
