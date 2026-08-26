@@ -316,6 +316,16 @@ function cloneArmedCharacter(character: Object3D, sword: Object3D) {
   return clonedCharacter;
 }
 
+function hasSkinnedMesh(scene: Object3D): boolean {
+  let found = false;
+
+  scene.traverse((object) => {
+    if ((object as Object3D & { isSkinnedMesh?: boolean }).isSkinnedMesh) found = true;
+  });
+
+  return found;
+}
+
 function AnimatedSoldier({
   soldier,
   model,
@@ -343,39 +353,44 @@ function AnimatedSoldier({
 function MountedKnight({
   soldier,
   knight,
+  fallbackRider,
   horse,
   sword,
 }: {
   soldier: Soldier;
   knight: ModelAsset;
+  fallbackRider: ModelAsset;
   horse: ModelAsset;
   sword: Object3D;
 }) {
+  const knightCanAnimate = useMemo(() => hasSkinnedMesh(knight.scene), [knight.scene]);
+  // 현재 기사 GLB처럼 리그만 있고 보이는 메시가 스키닝되지 않은 자산은
+  // 액션을 재생해도 몸체가 움직이지 않는다. 정상 스킨 자산을 기수로 사용해
+  // 애니메이션을 유지하고, 기사 GLB가 수정되면 자동으로 원래 자산을 사용한다.
+  const riderScene = knightCanAnimate ? knight.scene : fallbackRider.scene;
+  const riderAnimations = knightCanAnimate ? knight.animations : fallbackRider.animations;
+  const riderMountRef = useRef<Group | null>(null);
+  const riderMountParentInverse = useRef(new Matrix4());
   const mounted = useMemo(() => {
     const clonedHorse = SkeletonUtils.clone(horse.scene);
-    const clonedRider = cloneArmedCharacter(knight.scene, sword);
+    const clonedRider = cloneArmedCharacter(riderScene, sword);
     const riderAttach = clonedHorse.getObjectByName(HORSE_RIDER_ATTACH_BONE);
     const riderRoot = clonedRider.getObjectByName(RIDER_ROOT_BONE);
 
-    if (riderAttach) {
-      if (riderRoot) {
-        clonedRider.updateMatrixWorld(true);
-        clonedRider.matrix.copy(new Matrix4().copy(riderRoot.matrixWorld).invert());
-        clonedRider.matrix.decompose(
-          clonedRider.position,
-          clonedRider.quaternion,
-          clonedRider.scale,
-        );
-      }
-      riderAttach.add(clonedRider);
-    } else {
-      clonedHorse.add(clonedRider);
+    if (riderRoot) {
+      clonedRider.updateMatrixWorld(true);
+      clonedRider.matrix.copy(new Matrix4().copy(riderRoot.matrixWorld).invert());
+      clonedRider.matrix.decompose(
+        clonedRider.position,
+        clonedRider.quaternion,
+        clonedRider.scale,
+      );
     }
 
-    return { horse: clonedHorse, rider: clonedRider };
-  }, [horse.scene, knight.scene, sword]);
+    return { horse: clonedHorse, rider: clonedRider, riderAttach };
+  }, [horse.scene, riderScene, sword]);
   const horseClips = useMemo(() => inPlaceAnimations(horse.animations), [horse.animations]);
-  const riderClips = useMemo(() => inPlaceAnimations(knight.animations), [knight.animations]);
+  const riderClips = useMemo(() => inPlaceAnimations(riderAnimations), [riderAnimations]);
   const horseActions = useAnimations(horseClips, mounted.horse).actions;
   const riderActions = useAnimations(riderClips, mounted.rider).actions;
 
@@ -392,7 +407,38 @@ function MountedKnight({
     SOLDIER_DEATH_ANIMATION_NAMES,
   );
 
-  return <primitive object={mounted.horse} position={[0, 0, 0]} scale={SOLDIER_MODEL_SCALE} />;
+  const syncRiderMount = useCallback(() => {
+    const riderMount = riderMountRef.current;
+    const riderAttach = mounted.riderAttach;
+    const parent = riderMount?.parent;
+    if (!riderMount || !riderAttach || !parent) return;
+
+    // 말과 기수는 같은 본 이름을 다수 공유한다. 기수를 말 hierarchy 안에 넣으면
+    // 말 클립이 기수 본에 잘못 바인딩되므로, 별도 sibling으로 두고 안장 본만 추적한다.
+    parent.updateWorldMatrix(true, false);
+    riderAttach.updateWorldMatrix(true, false);
+    riderMount.matrix.multiplyMatrices(
+      riderMountParentInverse.current.copy(parent.matrixWorld).invert(),
+      riderAttach.matrixWorld,
+    );
+    riderMount.matrix.decompose(
+      riderMount.position,
+      riderMount.quaternion,
+      riderMount.scale,
+    );
+  }, [mounted.riderAttach]);
+
+  useLayoutEffect(syncRiderMount, [syncRiderMount]);
+  useFrame(syncRiderMount);
+
+  return (
+    <group scale={SOLDIER_MODEL_SCALE}>
+      <primitive object={mounted.horse} position={[0, 0, 0]} />
+      <group ref={riderMountRef}>
+        <primitive object={mounted.rider} position={[0, 0, 0]} />
+      </group>
+    </group>
+  );
 }
 
 function SoldierVisual({
@@ -405,7 +451,15 @@ function SoldierVisual({
   assets: Pick<BattlefieldAssets, "soldier" | "knight" | "horse" | "sword">;
 }) {
   if (unitType === "KNIGHT") {
-    return <MountedKnight soldier={soldier} knight={assets.knight} horse={assets.horse} sword={assets.sword} />;
+    return (
+      <MountedKnight
+        soldier={soldier}
+        knight={assets.knight}
+        fallbackRider={assets.soldier}
+        horse={assets.horse}
+        sword={assets.sword}
+      />
+    );
   }
 
   // 궁수도 별도 임시 마커 대신 보병과 같은 솔져 모델과 애니메이션을 사용한다.
