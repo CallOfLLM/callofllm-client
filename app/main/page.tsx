@@ -33,13 +33,13 @@ const menus = [
     pending: false,
   },
   {
-    href: "/main",
-    eyebrow: "ONLINE",
-    title: "온라인 대전",
-    description: "온라인으로 상대와 전략을 다툽니다.",
-    icon: "/ui/pack/pause.webp",
-    accent: "/ui/pack/accent-red.webp",
-    pending: true,
+    href: "/manual",
+    eyebrow: "FIELD MANUAL",
+    title: "사용설명서",
+    description: "편성, 카메라, 자연어 명령을 확인합니다.",
+    icon: "/ui/pack/infantry-formation.webp",
+    accent: "/ui/pack/accent-blue.webp",
+    pending: false,
   },
 ] as const;
 

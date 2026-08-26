@@ -1,12 +1,12 @@
-import { isTutorialStage, type StageData } from "../../../(lib)/stages";
+import type { StageData } from "../../../(lib)/stages";
 import styles from "./GameHud.module.css";
 
 type Props = {
   stage: StageData;
-  onHintSelect: (hint: string) => void;
+  onManualOpen: () => void;
 };
 
-export default function ObjectivePanel({ stage, onHintSelect }: Props) {
+export default function ObjectivePanel({ stage, onManualOpen }: Props) {
   return (
     <section className={styles.objectivePanel} aria-label="작전 목표">
       <p className={styles.objectiveEyebrow}>
@@ -15,15 +15,9 @@ export default function ObjectivePanel({ stage, onHintSelect }: Props) {
 
       <p className={styles.objectiveText}>{stage.objective.label}</p>
 
-      {isTutorialStage(stage) && (
-        <button
-          type="button"
-          onClick={() => onHintSelect(stage.objective.hintCommand)}
-          className={styles.hintButton}
-        >
-          예시 명령 — {stage.objective.hintCommand}
-        </button>
-      )}
+      <button type="button" onClick={onManualOpen} className={styles.manualButton}>
+        사용설명서 다시 보기
+      </button>
     </section>
   );
 }

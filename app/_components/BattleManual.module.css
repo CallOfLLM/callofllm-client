@@ -1,0 +1,257 @@
+.manual {
+  display: grid;
+  gap: 1rem;
+  color: #ded9ca;
+}
+
+.section,
+.coreRule {
+  border: 1px solid rgba(222, 217, 202, 0.18);
+  border-radius: 2px;
+  background: rgba(5, 13, 18, 0.82);
+  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.35), 0 8px 18px rgba(0, 0, 0, 0.28);
+  padding: 1rem;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid rgba(222, 217, 202, 0.12);
+  padding-bottom: 0.7rem;
+}
+
+.sectionHeader > span,
+.coreRule > span,
+.commandCard > span {
+  color: #7fa4bd;
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+}
+
+.sectionHeader h2 {
+  margin: 0;
+  color: #f0ecdf;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.08rem;
+  letter-spacing: 0.03em;
+}
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0.9rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.steps li {
+  display: grid;
+  grid-template-columns: 1.7rem minmax(0, 1fr);
+  gap: 0.65rem;
+  min-width: 0;
+  background: rgba(2, 8, 12, 0.42);
+  padding: 0.75rem;
+}
+
+.stepNumber {
+  display: grid;
+  width: 1.7rem;
+  height: 1.7rem;
+  place-items: center;
+  border: 1px solid #7fa4bd;
+  background: rgba(39, 83, 112, 0.38);
+  color: #f0ecdf;
+  font-size: 0.65rem;
+  font-weight: 800;
+}
+
+.steps strong,
+.notes strong {
+  color: #e9e5d9;
+  font-size: 0.72rem;
+}
+
+.steps p,
+.coreRule p,
+.commandCard p {
+  margin: 0.3rem 0 0;
+  color: #99a3a6;
+  font-size: 0.67rem;
+  line-height: 1.55;
+}
+
+.coreRule {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr);
+  align-items: center;
+  border-color: rgba(127, 164, 189, 0.45);
+  background: linear-gradient(90deg, rgba(39, 83, 112, 0.28), rgba(5, 13, 18, 0.88));
+}
+
+.coreRule strong {
+  color: #eef0e9;
+  font-size: 0.86rem;
+}
+
+.commandGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin-top: 0.9rem;
+}
+
+.commandCard {
+  min-width: 0;
+  border: 1px solid rgba(127, 164, 189, 0.18);
+  background: rgba(2, 8, 12, 0.5);
+  padding: 0.8rem;
+}
+
+.commandCard h3 {
+  margin: 0.3rem 0 0;
+  color: #e8e4d8;
+  font-size: 0.73rem;
+}
+
+.commandCard code {
+  display: block;
+  margin-top: 0.65rem;
+  border-left: 2px solid #7fa4bd;
+  background: rgba(39, 83, 112, 0.15);
+  padding: 0.55rem 0.65rem;
+  color: #b7d1df;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.64rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.splitSection {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.directionList {
+  display: grid;
+  gap: 0;
+  margin: 0.8rem 0 0;
+}
+
+.directionList > div,
+.controlList li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 2.1rem;
+  border-bottom: 1px solid rgba(222, 217, 202, 0.09);
+  font-size: 0.66rem;
+}
+
+.directionList dt {
+  color: #d8d4c8;
+  font-weight: 800;
+}
+
+.directionList dd {
+  margin: 0;
+  color: #8f999c;
+  text-align: right;
+}
+
+.caution {
+  margin: 0.8rem 0 0;
+  border-left: 2px solid #c28a62;
+  background: rgba(128, 70, 39, 0.12);
+  padding: 0.6rem 0.7rem;
+  color: #c9ac94;
+  font-size: 0.64rem;
+  line-height: 1.5;
+}
+
+.controlList,
+.notes {
+  margin: 0.8rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.controlList kbd {
+  border: 1px solid rgba(127, 164, 189, 0.32);
+  border-bottom-width: 2px;
+  border-radius: 2px;
+  background: rgba(39, 83, 112, 0.2);
+  padding: 0.25rem 0.45rem;
+  color: #c8d7df;
+  font-family: inherit;
+  font-size: 0.62rem;
+  font-weight: 800;
+}
+
+.controlList span {
+  color: #9ba4a7;
+}
+
+.notes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem 1rem;
+}
+
+.notes li {
+  display: grid;
+  grid-template-columns: 6.7rem minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0.65rem;
+  border-bottom: 1px solid rgba(222, 217, 202, 0.09);
+  padding: 0.55rem 0;
+}
+
+.notes span {
+  color: #929c9f;
+  font-size: 0.66rem;
+  line-height: 1.5;
+}
+
+.compact {
+  gap: 0.75rem;
+}
+
+.compact .section,
+.compact .coreRule {
+  box-shadow: none;
+}
+
+@media (max-width: 760px) {
+  .section,
+  .coreRule {
+    padding: 0.8rem;
+  }
+
+  .sectionHeader {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.28rem;
+  }
+
+  .steps,
+  .commandGrid,
+  .splitSection,
+  .notes {
+    grid-template-columns: 1fr;
+  }
+
+  .coreRule {
+    grid-template-columns: 1fr;
+    gap: 0.35rem;
+  }
+
+  .notes li {
+    grid-template-columns: 6rem minmax(0, 1fr);
+  }
+}

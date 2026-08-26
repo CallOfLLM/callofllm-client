@@ -35,16 +35,12 @@ export interface EnemySquadData {
 export interface Objective {
   /** 전투 중 화면에 띄울 목표 */
   label: string;
-  /** 입력창에 채워 줄 추천 명령 */
-  hintCommand: string;
 }
 
 export interface StageData {
   id: number;
   title: string;
   description: string;
-  /** 전투 도움말과 예시 명령을 노출할 튜토리얼 스테이지인지 여부 */
-  tutorial: boolean;
   /**
    * SELECT_MAP으로 보낼 서버 맵 ID. 생략하면 장애물이 없는 내장 sandbox(0)를 쓴다.
    * 외부 JSON 맵(1~3)으로 바꿀 때는 아래 spawn 좌표가 그 맵의 WALL 셀이 아닌지 먼저 확인해야 한다.
@@ -65,14 +61,12 @@ function infantrySquad(count: number, spawnX: number, spawnY: number): EnemySqua
 function stageOneCopy(id: number): StageData {
   return {
     id,
-    title: "이동과 첫 공격",
-    description: "직접 편성한 보유 부대로 이동과 공격 명령을 사용해 소규모 전투를 마무리하세요.",
-    tutorial: true,
+    title: "중앙 전선 교전",
+    description: "직접 편성한 보유 부대로 중앙 전선의 적군을 전멸시키세요.",
     mapID: PLAYABLE_MAP_ID,
     enemySquads: [infantrySquad(10, MAP_CENTER.x + NEARBY_ENEMY_FORWARD_OFFSET, MAP_CENTER.y)],
     objective: {
       label: "적군 10명을 모두 처치하세요. 적군이 전멸하면 즉시 클리어됩니다.",
-      hintCommand: "모두 공격!",
     },
     rewardGold: 10,
   };
@@ -130,9 +124,4 @@ export function nextStageID(stageID: number): number | null {
 /** 클리어한 스테이지의 바로 다음 스테이지까지 열어 준다. */
 export function isStageAvailable(stageID: number, clearedStage: number): boolean {
   return stageID <= clearedStage + 1;
-}
-
-/** 튜토리얼 안내 여부는 아군 편성 방식과 독립적으로 관리한다. */
-export function isTutorialStage(stage: StageData): boolean {
-  return stage.tutorial;
 }

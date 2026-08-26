@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { hasSeenManual } from "../(lib)/manual";
 import styles from "./NicknameClient.module.css";
 
 const COMMANDER_NAME_STORAGE_KEY = "nickname";
@@ -17,7 +18,7 @@ export default function NicknameClient() {
     const savedCommanderName = localStorage.getItem(COMMANDER_NAME_STORAGE_KEY);
 
     if (savedCommanderName) {
-      router.replace("/main");
+      router.replace(hasSeenManual() ? "/main" : "/manual");
     }
   }, [router]);
 
@@ -33,7 +34,7 @@ export default function NicknameClient() {
     }
 
     localStorage.setItem(COMMANDER_NAME_STORAGE_KEY, commanderName);
-    router.push("/main");
+    router.push("/manual");
   };
 
   return (

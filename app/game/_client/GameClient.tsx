@@ -11,6 +11,7 @@ import ObjectivePanel from "./components/ObjectivePanel";
 import SquadPanel from "./components/SquadPanel";
 import BriefingOverlay from "./components/overlays/BriefingOverlay";
 import LoadingOverlay from "./components/overlays/LoadingOverlay";
+import ManualOverlay from "./components/overlays/ManualOverlay";
 import ResultOverlay from "./components/overlays/ResultOverlay";
 import { useCommandChat } from "./hooks/useCommandChat";
 import { useEnemyCommander } from "./hooks/useEnemyCommander";
@@ -40,6 +41,7 @@ export default function GameClient() {
   } = useSelectedStage();
   const [assetsReady, setAssetsReady] = useState(false);
   const [started, setStarted] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
   const [followSquadID, setFollowSquadID] = useState<number | null>(null);
   const hasDeployedArmy = deployment?.squads.some((squad) => squadSoldierCount(squad) > 0) ?? false;
 
@@ -49,6 +51,8 @@ export default function GameClient() {
   }, [hasDeployedArmy, router, stage]);
 
   const clearFollowSquad = useCallback(() => setFollowSquadID(null), []);
+  const openManual = useCallback(() => setManualOpen(true), []);
+  const closeManual = useCallback(() => setManualOpen(false), []);
   const toggleFollowSquad = useCallback((squadID: number) => {
     setFollowSquadID((current) => (current === squadID ? null : squadID));
   }, []);
@@ -81,6 +85,7 @@ export default function GameClient() {
     playing,
     finished,
     commandReady: session.commandReady,
+    idleGuideEnabled: !manualOpen,
     serverProtocolVersion: session.serverProtocolVersion,
     stageStatus: session.stageStatus,
     currentGoal: stage?.objective.label ?? null,
@@ -116,73 +121,86 @@ export default function GameClient() {
       : 0;
 
   return (
-    <div className="h-dvh w-full">
-      <GameScene
-        mapID={stage ? stageMapID(stage) : 0}
-        soldiers={session.soldiers}
-        followSquadID={followSquadID}
-        initialCameraReady={session.networkReady}
-        onReady={handleSceneReady}
-      />
+    <>
+      <div
+        className="h-dvh w-full"
+        aria-hidden={manualOpen || undefined}
+        inert={manualOpen ? true : undefined}
+      >
+        <GameScene
+          mapID={stage ? stageMapID(stage) : 0}
+          soldiers={session.soldiers}
+          followSquadID={followSquadID}
+          initialCameraReady={session.networkReady}
+          onReady={handleSceneReady}
+        />
 
-      <ConnectionBar
-        wsUrl={session.wsUrl}
-        connectionState={session.connectionState}
-        protocolReady={session.protocolReady}
-        serverProtocolVersion={session.serverProtocolVersion}
-        sessionID={session.sessionID}
-        mapInfo={session.mapInfo}
-        setupLabel={SETUP_PHASE_LABEL[session.setupPhase]}
-        onUrlChange={session.setWsUrl}
-        onConnect={session.connect}
-        onDisconnect={session.disconnect}
-      />
-
-      {playing && stage && <ObjectivePanel stage={stage} onHintSelect={chat.setChatInput} />}
-
-      <SquadPanel
-        squads={displaySquads}
-        enemyAliveCount={session.stageStatus?.aliveEnemyCount ?? null}
-        followSquadID={followSquadID}
-        onFollowSquadToggle={toggleFollowSquad}
-      />
-
-      <CommandChat
-        messages={chat.chatMessages}
-        pending={chat.chatPending}
-        input={chat.chatInput}
-        canCommand={canCommand}
-        playing={playing}
-        finished={finished}
-        onInputChange={chat.setChatInput}
-        onSend={chat.sendChatMessage}
-        onClear={chat.clearChat}
-      />
-
-      {phase === "loading" && (
-        <LoadingOverlay
-          networkReady={session.networkReady}
-          assetsReady={assetsReady}
-          disconnected={session.connectionClosed}
+        <ConnectionBar
+          wsUrl={session.wsUrl}
+          connectionState={session.connectionState}
+          protocolReady={session.protocolReady}
+          serverProtocolVersion={session.serverProtocolVersion}
+          sessionID={session.sessionID}
+          mapInfo={session.mapInfo}
           setupLabel={SETUP_PHASE_LABEL[session.setupPhase]}
-          setupFailed={session.setupPhase === "failed"}
+          onUrlChange={session.setWsUrl}
+          onConnect={session.connect}
+          onDisconnect={session.disconnect}
         />
-      )}
 
-      {phase === "briefing" && stage && (
-        <BriefingOverlay stage={stage} squads={displaySquads} onStart={() => setStarted(true)} />
-      )}
+        {playing && stage && <ObjectivePanel stage={stage} onManualOpen={openManual} />}
 
-      {phase === "finished" && stage && (
-        <ResultOverlay
-          clear={mission.outcome === "clear"}
-          reason={mission.reason}
-          stageID={stage.id}
-          stageTitle={stage.title}
-          awardedGold={awardedGold}
-          nextHref={mission.outcome === "clear" ? nextStageHref : null}
+        <SquadPanel
+          squads={displaySquads}
+          enemyAliveCount={session.stageStatus?.aliveEnemyCount ?? null}
+          followSquadID={followSquadID}
+          onFollowSquadToggle={toggleFollowSquad}
         />
-      )}
-    </div>
+
+        <CommandChat
+          messages={chat.chatMessages}
+          pending={chat.chatPending}
+          input={chat.chatInput}
+          canCommand={canCommand}
+          playing={playing}
+          finished={finished}
+          onInputChange={chat.setChatInput}
+          onSend={chat.sendChatMessage}
+          onClear={chat.clearChat}
+        />
+
+        {phase === "loading" && (
+          <LoadingOverlay
+            networkReady={session.networkReady}
+            assetsReady={assetsReady}
+            disconnected={session.connectionClosed}
+            setupLabel={SETUP_PHASE_LABEL[session.setupPhase]}
+            setupFailed={session.setupPhase === "failed"}
+          />
+        )}
+
+        {phase === "briefing" && stage && (
+          <BriefingOverlay
+            stage={stage}
+            squads={displaySquads}
+            onManualOpen={openManual}
+            onStart={() => setStarted(true)}
+          />
+        )}
+
+        {phase === "finished" && stage && (
+          <ResultOverlay
+            clear={mission.outcome === "clear"}
+            reason={mission.reason}
+            stageID={stage.id}
+            stageTitle={stage.title}
+            awardedGold={awardedGold}
+            nextHref={mission.outcome === "clear" ? nextStageHref : null}
+          />
+        )}
+      </div>
+
+      {manualOpen && <ManualOverlay battleInProgress={playing} onClose={closeManual} />}
+    </>
   );
 }

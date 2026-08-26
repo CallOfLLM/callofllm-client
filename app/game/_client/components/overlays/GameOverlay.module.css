@@ -63,6 +63,10 @@
   max-width: 42rem;
 }
 
+.manualDialog {
+  max-width: 64rem;
+}
+
 .resultDialog,
 .loadingDialog {
   max-width: 30rem;
@@ -97,6 +101,28 @@
   font-size: 0.54rem;
   font-weight: 800;
   letter-spacing: 0.2em;
+}
+
+.topBarClose {
+  height: 1.7rem;
+  border: 1px solid rgba(222, 217, 202, 0.2);
+  border-radius: 2px;
+  background: rgba(2, 8, 12, 0.55);
+  padding: 0 0.65rem;
+  color: #b7bdbe;
+  font: inherit;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+}
+
+.topBarClose:hover {
+  border-color: #7fa4bd;
+  color: #f0ecdf;
+}
+
+.topBarClose:focus-visible {
+  outline: 2px solid #b9d2e1;
+  outline-offset: 2px;
 }
 
 .eyebrow {
@@ -146,76 +172,17 @@
   line-height: 1.55;
 }
 
-.tutorial {
-  margin-top: 1.1rem;
-  border: 1px solid rgba(127, 164, 189, 0.3);
-  border-radius: 2px;
-  background: rgba(39, 83, 112, 0.14);
-  padding: 0.9rem;
+.manualNotice {
+  margin: 0.8rem 0 0;
+  border-left: 2px solid #c28a62;
+  background: rgba(128, 70, 39, 0.14);
+  padding: 0.65rem 0.8rem;
+  color: #d1b29a;
+  font-size: 0.66rem;
 }
 
-.tutorial h3 {
-  margin: 0;
-  color: #9fc0d4;
-  font-size: 0.64rem;
-  letter-spacing: 0.16em;
-}
-
-.tutorial > p {
-  margin: 0.45rem 0 0;
-  color: #a5adaf;
-  font-size: 0.68rem;
-  line-height: 1.5;
-}
-
-.tutorial ol {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.75rem;
-  margin: 0.85rem 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.tutorial li {
-  display: grid;
-  grid-template-columns: 1.5rem minmax(0, 1fr);
-  gap: 0.55rem;
-  color: #aeb5b7;
-  font-size: 0.68rem;
-  line-height: 1.45;
-}
-
-.step {
-  display: grid;
-  width: 1.5rem;
-  height: 1.5rem;
-  place-items: center;
-  border: 1px solid #7fa4bd;
-  background: rgba(39, 83, 112, 0.4);
-  color: #f0ecdf;
-  font-size: 0.65rem;
-  font-weight: 800;
-}
-
-.tutorial li p {
-  margin: 0;
-}
-
-.tutorial li p:first-child {
-  color: #e9e5d9;
-  font-weight: 800;
-}
-
-.tutorial code {
-  display: block;
-  margin-top: 0.42rem;
-  border: 1px solid rgba(127, 164, 189, 0.2);
-  background: rgba(1, 6, 10, 0.5);
-  padding: 0.42rem 0.55rem;
-  color: #a9c9db;
-  font-size: 0.6rem;
-  overflow-wrap: anywhere;
+.manualContent {
+  margin-top: 1rem;
 }
 
 .squadList {
@@ -407,10 +374,6 @@
 
   .title {
     font-size: 1.7rem;
-  }
-
-  .tutorial ol {
-    grid-template-columns: 1fr;
   }
 
   .squadRow {

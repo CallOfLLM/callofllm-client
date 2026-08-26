@@ -6,7 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { DEFAULT_GAME_DATA, GAME_DATA_UPDATED_EVENT, loadGameData } from "../../(lib)/_gametype";
-import { isStageAvailable, isTutorialStage, STAGES } from "../../(lib)/stages";
+import { isStageAvailable, STAGES } from "../../(lib)/stages";
 import UiPanelFrame from "../../_components/UiPanelFrame";
 import styles from "./StageSelectClient.module.css";
 
@@ -27,8 +27,7 @@ export default function StageSelectClient() {
       {STAGES.map((stage) => {
         const available = isStageAvailable(stage.id, clearedStage);
         const cleared = stage.id <= clearedStage;
-        const tutorial = isTutorialStage(stage);
-        const status = cleared ? "클리어" : available ? (tutorial ? "튜토리얼" : "출정 가능") : "잠김";
+        const status = cleared ? "클리어" : available ? "출정 가능" : "잠김";
         const icon = available ? "/ui/pack/swords.webp" : "/ui/pack/pause.webp";
         const accent = available ? "/ui/pack/accent-blue.webp" : "/ui/pack/accent-red.webp";
 

@@ -1,17 +1,16 @@
 import Link from "next/link";
 import type { DeploymentSquad } from "../../../../(lib)/squadfuncs";
-import { isTutorialStage, type StageData } from "../../../../(lib)/stages";
+import type { StageData } from "../../../../(lib)/stages";
 import styles from "./GameOverlay.module.css";
 
 type Props = {
   stage: StageData;
   squads: DeploymentSquad[];
+  onManualOpen: () => void;
   onStart: () => void;
 };
 
-export default function BriefingOverlay({ stage, squads, onStart }: Props) {
-  const tutorial = isTutorialStage(stage);
-
+export default function BriefingOverlay({ stage, squads, onManualOpen, onStart }: Props) {
   return (
     <div role="dialog" aria-modal="true" aria-label="작전 브리핑" className={styles.overlay}>
       <div className={styles.shade} aria-hidden="true" />
@@ -23,41 +22,12 @@ export default function BriefingOverlay({ stage, squads, onStart }: Props) {
           <span>STAGE {stage.id}</span>
         </div>
 
-        <p className={styles.eyebrow}>
-          STAGE {stage.id}
-          {tutorial && " · TUTORIAL"}
-        </p>
+        <p className={styles.eyebrow}>STAGE {stage.id}</p>
         <h2 className={styles.title}>{stage.title}</h2>
         <p className={styles.lead}>{stage.description}</p>
 
         <h3 className={styles.sectionTitle}>작전 목표</h3>
         <p className={styles.objective}>{stage.objective.label}</p>
-
-        {tutorial && (
-          <section className={styles.tutorial}>
-            <h3>전투 도움말</h3>
-            <p>전장은 640m × 320m입니다. 정확한 좌표 대신 방향과 미터 거리로 명령하세요.</p>
-            <ol>
-              <li>
-                <span className={styles.step}>1</span>
-                <div>
-                  <p>먼저 이동</p>
-                  <p>적과 거리를 좁히거나 유리한 위치로 부대를 움직입니다.</p>
-                  <code>모두 앞으로 전진!</code>
-                  <code>또는 앞으로 10미터 전진</code>
-                </div>
-              </li>
-              <li>
-                <span className={styles.step}>2</span>
-                <div>
-                  <p>이어서 공격</p>
-                  <p>공격 명령을 내리면 가장 가까운 적을 추적합니다. 적군이 전멸하면 클리어됩니다.</p>
-                  <code>모두 공격!</code>
-                </div>
-              </li>
-            </ol>
-          </section>
-        )}
 
         {squads.length > 0 && (
           <>
@@ -88,6 +58,9 @@ export default function BriefingOverlay({ stage, squads, onStart }: Props) {
         <div className={styles.actions}>
           <button type="button" onClick={onStart} autoFocus className={styles.primaryButton}>
             작전 시작
+          </button>
+          <button type="button" onClick={onManualOpen} className={styles.secondaryButton}>
+            사용설명서
           </button>
           <Link href="/stage" className={styles.secondaryButton}>
             스테이지 선택

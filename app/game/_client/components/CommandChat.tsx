@@ -7,12 +7,14 @@ import styles from "./GameHud.module.css";
 const ROLE_LABEL = {
   user: "나",
   assistant: "AI",
+  guide: "안내",
   error: "오류",
 } as const;
 
 const ROLE_CLASS = {
   user: styles.roleUser,
   assistant: styles.roleAssistant,
+  guide: styles.roleGuide,
   error: styles.roleError,
 } as const;
 
