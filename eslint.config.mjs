@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Vendored Basis Universal runtime loaded directly by KTX2Loader.
+    "public/basis/basis_transcoder.js",
   ]),
 ]);
 

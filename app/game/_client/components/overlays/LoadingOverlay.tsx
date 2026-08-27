@@ -1,4 +1,6 @@
+import Image from "next/image";
 import Link from "next/link";
+import styles from "./GameOverlay.module.css";
 
 type Props = {
   networkReady: boolean;
@@ -10,16 +12,11 @@ type Props = {
 
 function Checklist({ done, label }: { done: boolean; label: string }) {
   return (
-    <li className="flex items-center gap-3 text-sm">
-      <span
-        aria-hidden
-        className={`flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-          done ? "bg-sky-500 text-slate-950" : "bg-white/10 text-white/40"
-        }`}
-      >
+    <li className={styles.checkItem}>
+      <span className={`${styles.checkMark} ${done ? styles.checkDone : ""}`} aria-hidden="true">
         {done ? "✓" : "…"}
       </span>
-      <span className={done ? "text-slate-200" : "text-slate-400"}>{label}</span>
+      <span>{label}</span>
       <span className="sr-only">{done ? "완료" : "진행 중"}</span>
     </li>
   );
@@ -27,16 +24,29 @@ function Checklist({ done, label }: { done: boolean; label: string }) {
 
 export default function LoadingOverlay({ networkReady, assetsReady, disconnected, setupLabel, setupFailed }: Props) {
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="fixed inset-0 z-30 flex items-center justify-center bg-slate-950/85 p-6 backdrop-blur"
-    >
-      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-slate-900/90 p-8 text-white">
-        <p className="text-sm font-semibold tracking-[0.24em] text-sky-400">LOADING</p>
-        <h2 className="mt-2 text-2xl font-bold">전장을 준비하고 있습니다</h2>
+    <div role="status" aria-live="polite" className={styles.loadingOverlay}>
+      <Image
+        src="/bg/battlefield.webp"
+        alt=""
+        fill
+        sizes="100vw"
+        preload
+        draggable={false}
+        className={styles.background}
+      />
+      <div className={styles.shade} aria-hidden="true" />
+      <div className={styles.screenFrame} aria-hidden="true" />
 
-        <ul className="mt-6 flex flex-col gap-3">
+      <section className={`${styles.dialog} ${styles.loadingDialog}`}>
+        <div className={styles.topBar}>
+          <span>FIELD DEPLOYMENT</span>
+          <span>SYNC</span>
+        </div>
+
+        <p className={styles.eyebrow}>LOADING</p>
+        <h2 className={styles.title}>전장을 준비하고 있습니다</h2>
+
+        <ul className={styles.checklist}>
           <Checklist
             done={networkReady}
             label={networkReady ? "게임 서버에 연결하고 부대를 배치하는 중" : `게임 서버 준비 — ${setupLabel}`}
@@ -45,27 +55,20 @@ export default function LoadingOverlay({ networkReady, assetsReady, disconnected
         </ul>
 
         {setupFailed && !disconnected && (
-          <div className="mt-6 rounded-lg border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
+          <div className={styles.notice}>
             <p>서버가 스테이지 준비 요청을 거절했습니다.</p>
-            <p className="mt-1 text-amber-100/70">
-              브라우저 콘솔의 COMMAND_RESULT 로그에서 사유를 확인한 뒤 접속을 다시 눌러 주세요.
-            </p>
+            <p>브라우저 콘솔의 COMMAND_RESULT 로그에서 사유를 확인한 뒤 접속을 다시 눌러 주세요.</p>
           </div>
         )}
 
         {disconnected && (
-          <div className="mt-6 rounded-lg border border-red-400/30 bg-red-400/10 p-4 text-sm text-red-200">
+          <div className={styles.notice}>
             <p>게임 서버에 연결하지 못했습니다.</p>
-            <p className="mt-1 text-red-200/70">화면 왼쪽 위에서 서버 주소를 확인하고 접속 버튼을 눌러 주세요.</p>
-            <Link
-              href="/stage"
-              className="mt-3 inline-block font-semibold text-red-100 underline underline-offset-4 hover:text-white"
-            >
-              스테이지 선택으로 돌아가기
-            </Link>
+            <p>화면 왼쪽 위에서 서버 주소를 확인하고 접속 버튼을 눌러 주세요.</p>
+            <Link href="/stage">스테이지 선택으로 돌아가기</Link>
           </div>
         )}
-      </div>
+      </section>
     </div>
   );
 }

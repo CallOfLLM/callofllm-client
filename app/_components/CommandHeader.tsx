@@ -3,7 +3,16 @@
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { DEFAULT_GAME_DATA, GAME_DATA_UPDATED_EVENT, loadGameData, type GameData } from "../(lib)/_gametype";
+import {
+  clearGameData,
+  DEFAULT_GAME_DATA,
+  GAME_DATA_UPDATED_EVENT,
+  loadGameData,
+  type GameData,
+} from "../(lib)/_gametype";
+import { clearDeployment } from "../(lib)/squadfuncs";
+import UiPanelFrame from "./UiPanelFrame";
+import hudStyles from "./CommandHeader.module.css";
 
 const NICKNAME_STORAGE_KEY = "nickname";
 
@@ -13,17 +22,22 @@ const TROOP_LABEL: { key: keyof GameData; label: string }[] = [
   { key: "knight", label: "기사" },
 ];
 
-export default function CommandHeader() {
+type CommandHeaderProps = {
+  variant?: "default" | "uikit";
+};
+
+export default function CommandHeader({ variant = "default" }: CommandHeaderProps) {
   const router = useRouter();
   const [nickname, setNickname] = useState("");
   const [gameData, setGameData] = useState<GameData>(DEFAULT_GAME_DATA);
 
   // 로컬스토리지는 서버 렌더 시점에 없으므로 마운트 후에 읽는다.
   useEffect(() => {
-    setNickname(localStorage.getItem(NICKNAME_STORAGE_KEY) ?? "");
-
     // 충원·강화로 저장값이 바뀌면 헤더의 골드/병력도 따라 갱신한다.
-    const sync = () => setGameData(loadGameData());
+    const sync = () => {
+      setNickname(localStorage.getItem(NICKNAME_STORAGE_KEY) ?? "");
+      setGameData(loadGameData());
+    };
     sync();
 
     window.addEventListener(GAME_DATA_UPDATED_EVENT, sync);
@@ -32,8 +46,58 @@ export default function CommandHeader() {
 
   const logout = () => {
     localStorage.removeItem(NICKNAME_STORAGE_KEY);
+    clearGameData();
+    clearDeployment();
     router.replace("/");
   };
+
+  if (variant === "uikit") {
+    return (
+      <header className={hudStyles.header}>
+        <UiPanelFrame className={hudStyles.frame} sizes="(max-width: 700px) calc(100vw - 24px), 720px" />
+
+        <div className={hudStyles.content}>
+          <div className={hudStyles.portrait}>
+            <Image
+              src="/profile/warrior.webp"
+              width={88}
+              height={88}
+              alt=""
+              className={hudStyles.portraitImage}
+            />
+          </div>
+
+          <div className={hudStyles.identity}>
+            <span className={hudStyles.kicker}>COMMANDER</span>
+            <strong className={hudStyles.name}>{nickname || "지휘관"}</strong>
+            <span className={hudStyles.gold}>{gameData.gold.toLocaleString()} G</span>
+          </div>
+
+          <dl className={hudStyles.stats} aria-label="보유 병력">
+            {TROOP_LABEL.map(({ key, label }) => (
+              <div key={key} className={hudStyles.stat}>
+                <dt>{label}</dt>
+                <dd>{gameData[key].toLocaleString()}</dd>
+              </div>
+            ))}
+          </dl>
+
+          <button type="button" onClick={logout} className={hudStyles.logout}>
+            <Image
+              src="/ui/pack/status-center.webp"
+              alt=""
+              fill
+              sizes="(max-width: 700px) 88px, 100px"
+              draggable={false}
+              unoptimized
+              className={hudStyles.logoutFrame}
+            />
+            <span>로그아웃</span>
+          </button>
+        </div>
+      </header>
+    );
+  }
 
   return (
     <header className="fixed top-5 left-5 z-10">

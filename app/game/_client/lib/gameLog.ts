@@ -15,7 +15,10 @@ export function summarizeForLog(value: unknown): string {
 
   const record = value as Record<string, unknown>;
   if (typeof record.name === "string" && Array.isArray(record.fields)) {
-    return `${record.name} fields=[${(record.fields as number[]).join(", ")}] len=${record.pktLen}`;
+    const fields = record.fields as number[];
+    const preview = fields.slice(0, 24).join(", ");
+    const omitted = fields.length > 24 ? `, … +${fields.length - 24}` : "";
+    return `${record.name} fields=[${preview}${omitted}] len=${record.pktLen}`;
   }
 
   try {

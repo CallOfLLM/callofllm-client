@@ -4,10 +4,10 @@
 
 > 🎮 **지금 플레이하기:** [https://callofllm.vercel.app](https://callofllm.vercel.app)
 
-Call of LLM에서 플레이어는 좌표나 패킷을 직접 다루지 않습니다. “1소대를 앞으로 1000 전진시켜”, “적을 발견하면 교전해”처럼 한국어로 명령하면 OpenAI 모델이 현재 전장 상태와 대화 맥락을 읽고 실행 가능한 Protocol V15 명령으로 변환합니다. 별도의 적군 전술 AI도 같은 전장을 관찰하면서 보병·궁병·기병의 역할에 맞춰 대응합니다.
+Call of LLM에서 플레이어는 좌표나 패킷을 직접 다루지 않습니다. “1소대를 앞으로 50미터 전진시켜”, “적을 발견하면 교전해”처럼 한국어로 명령하면 OpenAI 모델이 현재 전장 상태와 대화 맥락을 읽고 실행 가능한 Protocol V15 명령으로 변환합니다. 별도의 적군 전술 AI도 같은 전장을 관찰하면서 보병·궁병·기병의 역할에 맞춰 대응합니다.
 
 - 현재 클라이언트 프로토콜: **CLIENT_PACKET_SPEC V15**
-- 현재 콘텐츠: **7개 스테이지**
+- 현재 콘텐츠: **20개 스테이지**
 - 플레이 방식: **싱글 플레이 / 실시간 자연어 지휘**
 - 온라인 대전: **준비 중**
 - 진행 데이터: **브라우저 localStorage 저장**
@@ -55,7 +55,7 @@ Call of LLM은 일반적인 RTS의 버튼·단축키 중심 조작을 자연어 
 - Protocol V15 패킷 직렬화·역직렬화와 런타임 검증
 - WebSocket 연결, 맵 선택, 스테이지 시작, 부대 생성, 세션 복구
 - React Three Fiber 기반 3D 전장 렌더링
-- 튜토리얼 목표, 클리어·실패, 보상과 진행도 처리
+- 첫 진입 사용설명서, 10초 무입력 안내, 클리어·실패, 보상과 진행도 처리
 - 브라우저 localStorage 기반 싱글 플레이 데이터 저장
 
 ### 이 저장소가 담당하지 않는 것
@@ -75,7 +75,7 @@ Call of LLM은 일반적인 RTS의 버튼·단축키 중심 조작을 자연어 
 
 ### 2. 검증 가능한 Structured Outputs
 
-OpenAI Responses API의 strict JSON Schema 형식을 사용합니다. 모델 출력은 서버에서 패킷 스키마로 한 번 검증되고, 브라우저에서도 스테이지별 허용 명령과 소유권을 다시 확인한 뒤에만 게임 서버로 전송됩니다.
+OpenAI Responses API의 strict JSON Schema 형식을 사용합니다. 모델 출력은 서버에서 패킷 스키마로 한 번 검증되고, 브라우저에서도 패킷 구조를 다시 확인한 뒤에만 게임 서버로 전송됩니다.
 
 ### 3. 전장 전체를 읽는 적군 전술 AI
 
@@ -98,9 +98,9 @@ OpenAI Responses API의 strict JSON Schema 형식을 사용합니다. 모델 출
 
 Three.js, React Three Fiber, Drei를 사용해 GLB 지형과 병사 모델을 렌더링합니다. 자유 카메라 조작과 스쿼드별 추적 카메라를 지원하며, 서버의 스냅샷에 따라 병사 위치와 방향을 갱신합니다.
 
-### 6. 단계형 튜토리얼과 성장 루프
+### 6. 보유 병력 편성과 성장 루프
 
-앞뒤 이동, 좌우 이동, 이동 중 정지, 기본 공격, 이동 교전을 순서대로 익힌 뒤 직접 충원한 병력으로 일반 전투에 출정합니다. 첫 클리어에만 골드와 다음 스테이지 해금이 적용됩니다.
+스테이지 1~20은 모두 맵 ID 1에서 적군 보병 10명을 상대하는 소규모 전투입니다. 플레이어는 준비 화면에서 보유 병력을 최대 5개 소대로 직접 편성하며, 각 스테이지의 첫 클리어에만 10 G와 다음 스테이지 해금이 적용됩니다.
 
 ## 게임 진행 흐름
 
@@ -112,10 +112,8 @@ flowchart TD
     B --> E[스테이지 선택]
     C --> B
     D --> B
-    E --> F{튜토리얼인가?}
-    F -- 예: 스테이지 1~5 --> H[고정 편성으로 전장 입장]
-    F -- 아니요: 스테이지 6~7 --> G[최대 5개 스쿼드 편성]
-    G --> H
+    E --> F[출정 준비: 보유 병력을 최대 5개 소대로 편성]
+    F --> H[전장 입장]
     H --> I[WebSocket 연결과 V15 초기화]
     I --> J[작전 브리핑]
     J --> K[자연어로 실시간 지휘]
@@ -136,30 +134,28 @@ flowchart TD
 
 ### 2. 닉네임 설정
 
-첫 화면에서 최대 16자의 닉네임을 입력합니다. 닉네임은 계정 서버가 아니라 현재 브라우저의 localStorage에 저장됩니다. 이미 닉네임이 있으면 다음 방문부터 부대 관리 화면으로 바로 이동합니다.
+첫 화면에서 최대 16자의 닉네임을 입력합니다. 닉네임은 계정 서버가 아니라 현재 브라우저의 localStorage에 저장됩니다. 최초 등록 직후에는 전투 사용설명서가 한 번 열리고, 이후에는 부대 관리 화면으로 바로 이동합니다. 설명서는 본부와 전투 화면에서 언제든 다시 열 수 있습니다.
 
-### 3. 튜토리얼 진행
+### 3. 스테이지 진행
 
-<code>출정</code> 메뉴에서 스테이지 1부터 시작합니다. 스테이지 1~5는 학습용 고정 편성을 사용하므로 별도의 병력 편성 없이 바로 전장으로 이동합니다.
+<code>출정</code> 메뉴에서 스테이지 1부터 시작합니다. 스테이지를 선택하면 출정 준비 화면이 열리며, 보유한 보병·궁수·기병을 최대 5개 소대로 직접 편성한 뒤 전장에 입장합니다. 스테이지 1~20의 적군은 모두 보병 10명입니다.
 
-각 스테이지는 앞 스테이지를 클리어해야 열립니다. 튜토리얼 화면의 <code>예시 명령</code> 버튼은 정답 예시를 채팅 입력창에 채워 주지만 자동으로 전송하지는 않습니다.
+각 스테이지는 앞 스테이지를 클리어해야 열립니다. 별도의 튜토리얼 스테이지는 없으며, 작전 시작 후 10초 동안 아무 입력도 없으면 실제 편성 이름을 사용한 이동·공격 예시가 안내 메시지로 한 번 표시됩니다. 이 안내는 명령을 자동으로 전송하지 않습니다.
 
 ### 4. 병력 충원
 
-<code>부대 충원</code>에서 골드를 사용해 보병, 궁수, 기병을 한 명씩 충원할 수 있습니다. 초기 보유 병력은 0명이지만, 스테이지 1~5는 고정 병력을 제공하므로 먼저 튜토리얼 보상을 모을 수 있습니다.
+<code>부대 충원</code>에서 골드를 사용해 보병, 궁수, 기병을 한 명씩 충원할 수 있습니다. 충원한 병력은 스테이지 1~20의 출정 준비 화면에서 직접 편성해 사용합니다. 초기 보유 병력은 0명이므로 첫 출정 전에 최소 한 명을 충원해야 합니다.
 
-### 5. 일반 스테이지 편성
+### 5. 스테이지 공통 편성
 
-스테이지 6~7에서는 보유 병력을 직접 편성합니다.
+스테이지 1~20은 모두 맵 ID 1에서 같은 적군 구성과 목표로 진행합니다.
 
-- 스테이지당 최대 5개 스쿼드
-- 스쿼드당 최대 200명
-- 스쿼드 이름 최대 20자
-- 보유 병력보다 많이 배치할 수 없음
-- 병력이 0명인 스쿼드는 출정 목록에서 제외
-- 전체 편성에 최소 1명 이상 있어야 출정 가능
-- <code>−</code>, <code>+</code>, <code>MAX</code> 버튼으로 병종별 인원 조절
-- 변경한 편성은 브라우저에 자동 저장
+- 아군: 보유 병력을 최대 5개 소대로 직접 편성
+- 적군: 보병 10명의 단일 스쿼드
+- 목표: 적군 10명 전멸
+- 첫 클리어 보상: 10 G
+- 스테이지 선택 후 출정 준비 화면에서 편성을 저장하고 게임 입장
+- 마지막 편성은 다음 게임의 출정 준비 화면에 자동으로 복원
 
 ### 6. 전장 준비
 
@@ -194,12 +190,12 @@ flowchart TD
 
 | 의도 | Protocol 명령 | 예시 |
 |---|---|---|
-| 지정 위치나 방향으로 이동 | <code>MOVE_SQUAD</code> | <code>1소대를 앞으로 1000 전진시켜</code> |
+| 지정 위치나 방향으로 이동 | <code>MOVE_SQUAD</code> | <code>1소대를 앞으로 50미터 전진시켜</code> |
 | 시야 안의 적 추적·공격 | <code>ATTACK_SQUAD</code> | <code>1소대 공격</code> |
 | 병사를 다른 아군 스쿼드로 편입 | <code>TRANSFER_SOLDIER</code> | <code>1소대 3번 병사를 2소대로 편입해</code> |
 | 이동·추적·공격 중지 | <code>STOP_SQUAD</code> | <code>1소대 정지</code> |
 | 특정 적 스쿼드 집중 공격 | <code>FOCUS_ATTACK</code> | <code>1소대로 적 2소대를 집중 공격해</code> |
-| 이동 중 적 발견 시 추적 전투 | <code>MOVE_ENGAGE_ON_SIGHT</code> | <code>1소대를 앞으로 2000 전진하면서 적을 발견하면 교전해</code> |
+| 이동 중 적 발견 시 추적 전투 | <code>MOVE_ENGAGE_ON_SIGHT</code> | <code>1소대를 앞으로 100미터 전진하면서 적을 발견하면 교전해</code> |
 | 목적지를 유지하며 사거리 내 이동 사격 | <code>MOVE_FIRE_IN_RANGE</code> | <code>궁병대를 오른쪽으로 이동시키면서 사거리 안의 적만 공격해</code> |
 
 자연어 AI는 다음 명령을 직접 만들 수 없습니다.
@@ -234,7 +230,7 @@ flowchart TD
 - 최신 전장 상태가 과거 대화보다 우선합니다.
 - 사용자가 지정한 이름이 여러 스쿼드와 겹치면 어느 스쿼드인지 되묻습니다.
 - 존재하지 않는 스쿼드·병사 ID를 임의로 생성하지 않습니다.
-- 스테이지 1~5에서는 학습하지 않은 명령을 클라이언트가 추가로 차단합니다.
+- 스테이지 1~20에서는 사용자 AI가 지원하는 모든 명령을 동일하게 사용할 수 있습니다.
 - AI 안내 메시지가 생성되더라도 <code>packetData</code>가 <code>null</code>이면 게임 서버에는 아무 명령도 보내지 않습니다.
 
 ## 부대·경제·성장 시스템
@@ -286,30 +282,15 @@ flowchart TD
 
 ## 스테이지
 
-스테이지는 앞에서부터 순서대로 해금됩니다. 스테이지 1~5는 고정 편성 튜토리얼이고, 6~7은 플레이어가 보유 병력으로 직접 스쿼드를 구성합니다.
+스테이지는 1부터 20까지 앞에서부터 순서대로 해금됩니다. 모든 스테이지가 맵 ID 1, 적군 보병 10명, 적군 전멸 목표와 첫 클리어 보상 10 G를 공유합니다. 아군은 각 스테이지의 출정 준비 화면에서 보유 병력을 최대 5개 소대로 직접 편성합니다.
 
-| 스테이지 | 제목 | 핵심 목표 | 아군 편성 | 적군 | 첫 클리어 보상 |
-|---:|---|---|---|---|---:|
-| 1 | 앞뒤로 이동 | 전진 600 이상 → 후퇴 600 이상 | 보병 10 고정 | 맵 구석의 표식용 보병 1 | 50 G |
-| 2 | 좌우로 이동 | 우측 600 이상 → 좌측 600 이상 | 보병 10 고정 | 맵 구석의 표식용 보병 1 | 50 G |
-| 3 | 가다가 정지 | 거리 없는 전진 → 경계 이탈 전 정지 | 보병 10 고정 | 맵 구석의 표식용 보병 1 | 80 G |
-| 4 | 첫 교전 | 앞쪽 적군 전멸 | 보병 12 고정 | 보병 6 | 120 G |
-| 5 | 접근 후 교전 | 좌우로 나뉜 적군 전멸 | 보병 10 + 궁수 5 고정 | 궁수 4 + 보병 6 | 150 G |
-| 6 | 평원의 첫 전투 | 적군 전멸 | 플레이어 편성 | 보병 12 | 300 G |
-| 7 | 안개 낀 협곡 | 적군 전멸 | 플레이어 편성 | 보병 28 + 궁수 16 + 기병 4 | 500 G |
+| 스테이지 | 맵 ID | 핵심 목표 | 아군 편성 | 적군 | 첫 클리어 보상 |
+|---:|---:|---|---|---|---:|
+| 1~20 | 1 | 적군 보병 10명 전멸 | 보유 병력 직접 편성, 최대 5개 소대 | 보병 10명 | 10 G |
 
-### 튜토리얼별 허용 명령
+### 스테이지별 명령 사용
 
-| 스테이지 | 허용 명령 |
-|---:|---|
-| 1 | <code>MOVE_SQUAD</code> |
-| 2 | <code>MOVE_SQUAD</code> |
-| 3 | <code>MOVE_SQUAD</code>, <code>STOP_SQUAD</code> |
-| 4 | <code>MOVE_SQUAD</code>, <code>ATTACK_SQUAD</code>, <code>STOP_SQUAD</code> |
-| 5 | <code>MOVE_SQUAD</code>, <code>ATTACK_SQUAD</code>, <code>STOP_SQUAD</code>, <code>MOVE_ENGAGE_ON_SIGHT</code>, <code>FOCUS_ATTACK</code> |
-| 6~7 | 사용자 AI가 지원하는 전체 명령 |
-
-스테이지 3에서는 아군 전체의 중심이 시작점 반경 1,300을 벗어나면 전장 이탈로 즉시 패배합니다. 이동 목표는 개별 병사가 아니라 살아 있는 아군 전체의 중심점을 기준으로 판정합니다.
+스테이지 1~20에서는 [지원 명령](#지원-명령)을 모두 사용할 수 있습니다. 스테이지 진행도에 따른 별도의 명령 제한은 없습니다.
 
 ## 전장 화면과 조작
 
@@ -368,7 +349,7 @@ flowchart LR
 2. 브라우저가 최근 대화, 현재 목표, 아군 이름·ID 표, 전체 병사 스냅샷을 사용자 API에 보냅니다.
 3. Route Handler가 OpenAI Responses API에 strict JSON Schema 응답을 요청합니다.
 4. Route Handler가 모델 출력을 <code>packetDataToBuffer</code>로 검증합니다.
-5. 브라우저가 현재 스테이지의 명령 allowlist를 검사합니다.
+5. 브라우저가 응답 패킷의 구조와 값 범위를 다시 검사합니다.
 6. 검증된 명령을 little-endian V15 바이너리 패킷으로 직렬화합니다.
 7. 외부 게임 서버가 명령을 처리합니다.
 8. 서버가 보낸 다음 전체 스냅샷으로 화면과 목표 상태를 갱신합니다.
@@ -512,7 +493,7 @@ Protocol V15 서버의 기본 세션 보존 시간은 300,000ms이지만, 클라
 - 외부 JSON 맵 ID: 1, 2, 3
 - 서버는 전체 Grid를 브라우저에 보내지 않음
 - 클라이언트는 선택한 <code>mapID</code>와 <code>mapVersion</code>에 맞는 렌더링 에셋을 자체 보유해야 함
-- 현재 등록된 스테이지 데이터는 모두 <code>mapID</code>를 생략하므로 실제 플레이에서는 sandbox 맵 0을 사용함
+- 현재 등록된 스테이지 1~20은 모두 <code>mapID=1</code>을 사용함
 
 ## 기술 스택
 
@@ -532,7 +513,7 @@ Protocol V15 서버의 기본 세션 보존 시간은 300,000ms이지만, 클라
 | Runtime | Node.js 22 이상 |
 | Deployment | Vercel |
 
-<code>gpt-5-mini</code>는 현재 코드와 <code>.env.example</code>의 기본 모델이며, Responses API와 Structured Outputs를 지원합니다. 모델 기능은 [OpenAI의 GPT-5 mini 공식 문서](https://developers.openai.com/api/docs/models/gpt-5-mini)에서 확인할 수 있습니다.
+사용자 명령 Route Handler는 <code>gpt-5.6-luna</code>와 추론 강도 <code>none</code>을, 적군 전술 Route Handler는 <code>gpt-5.6-terra</code>와 추론 강도 <code>low</code>를 서버 코드에서 각각 고정해 사용합니다. 두 모델 모두 Responses API와 Structured Outputs를 지원합니다. 자세한 기능은 [GPT-5.6 Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna)와 [GPT-5.6 Terra](https://developers.openai.com/api/docs/models/gpt-5.6-terra) 공식 문서에서 확인할 수 있습니다.
 
 ## 로컬 실행
 
@@ -571,7 +552,6 @@ cp .env.example .env.local
 
 ~~~dotenv
 OPENAI_API_KEY=your_openai_api_key
-OPENAI_MODEL=gpt-5-mini
 NEXT_PUBLIC_GAME_WS_URL=wss://your-game-server.example/
 ~~~
 
@@ -603,7 +583,6 @@ npm run start
 | 변수 | 필수 여부 | 노출 범위 | 설명 |
 |---|---|---|---|
 | <code>OPENAI_API_KEY</code> | AI 기능에 필수 | 서버 전용 | 사용자·적군 Route Handler가 OpenAI API를 호출할 때 사용하는 비밀 키 |
-| <code>OPENAI_MODEL</code> | 선택 | 서버 전용 | 사용할 모델 ID. 미설정 시 코드 기본값 <code>gpt-5-mini</code> |
 | <code>NEXT_PUBLIC_GAME_WS_URL</code> | 자동 연결에 선택, 전투에는 WS 서버 필수 | 브라우저 공개 | 외부 Protocol V15 WebSocket 서버 주소 |
 
 ### 주의사항
@@ -612,8 +591,8 @@ npm run start
 - <code>NEXT_PUBLIC_GAME_WS_URL</code>은 브라우저 번들에 포함되는 공개값이므로 비밀을 넣지 마세요.
 - <code>NEXT_PUBLIC_*</code> 값은 빌드 시 클라이언트 번들에 주입됩니다. 배포 환경에서 주소를 바꾸면 다시 빌드·배포해야 합니다.
 - HTTPS 페이지에서는 혼합 콘텐츠 차단을 피하기 위해 공개 접근 가능한 <code>wss://</code> 서버를 사용하세요.
-- 두 OpenAI Route Handler는 같은 <code>OPENAI_MODEL</code>을 사용합니다.
-- 설정한 모델은 Responses API와 strict JSON Schema Structured Outputs를 지원해야 합니다.
+- 모델 ID와 추론 강도는 각 OpenAI Route Handler의 서버 코드에 고정되어 있으며 환경 변수로 덮어쓰지 않습니다.
+- 모델을 바꿀 때는 Responses API와 strict JSON Schema Structured Outputs 지원 여부를 확인하세요.
 
 ## 스크립트
 
@@ -649,15 +628,16 @@ npm run build
 
 | 경로 | 역할 |
 |---|---|
-| <code>/</code> | 닉네임 입력. 저장된 닉네임이 있으면 <code>/main</code>으로 이동 |
-| <code>/main</code> | 출정, 충원, 시설, 온라인 대전 카드가 있는 부대 관리 허브 |
+| <code>/</code> | 닉네임 입력. 최초 등록 시 <code>/manual</code>, 이후에는 <code>/main</code>으로 이동 |
+| <code>/main</code> | 출정, 충원, 시설, 사용설명서 카드가 있는 부대 관리 허브 |
+| <code>/manual</code> | 편성, 자연어 명령, 방향, 카메라, 승패를 설명하는 전투 사용설명서 |
 | <code>/troop</code> | 골드를 사용한 병력 충원 |
 | <code>/building</code> | 병종별 공격력 표시값 강화 |
 | <code>/stage</code> | 진행도에 따른 스테이지 목록과 잠금 상태 |
-| <code>/stage/ready?stage=6</code> | 일반 스테이지 출정 편성 |
+| <code>/stage/ready?stage=1</code> | 보유 병력을 최대 5개 소대로 편성하고 출정을 확정하는 준비 화면 |
 | <code>/game?stage=1</code> | WebSocket 전장, 3D 렌더링, 자연어 명령, 목표와 결과 |
 
-잘못된 스테이지 번호로 <code>/game</code>에 들어가면 스테이지 1을 사용합니다. 튜토리얼 스테이지를 <code>/stage/ready</code>로 열면 해당 게임 화면으로 바로 이동합니다.
+잘못된 스테이지 번호로 <code>/game</code>에 들어가면 스테이지 1을 사용합니다. 저장된 아군 편성 없이 <code>/game</code>에 직접 들어가면 해당 스테이지의 출정 준비 화면으로 이동합니다. <code>/stage/ready</code>는 스테이지 1~20 모두에서 준비 화면을 표시하고 마지막 편성을 자동으로 복원하며, 병력이 한 명 이상 편성된 경우에만 해당 게임 화면으로 이동할 수 있습니다.
 
 ### POST /api/openai/command/user
 
@@ -667,7 +647,7 @@ npm run build
 
 ~~~json
 {
-  "message": "1소대를 앞으로 1000 전진시켜",
+  "message": "1소대를 앞으로 50미터 전진시켜",
   "history": [
     {
       "role": "user",
@@ -871,7 +851,7 @@ callofllm/
 │   │   ├── _gametype.ts          # 경제, 병력, 공격력, 진행도와 localStorage
 │   │   ├── _packet.ts            # Protocol V15 상수, 스키마, 직렬화·역직렬화
 │   │   ├── squadfuncs.ts         # 출정 편성 저장, 제한, spawn 계산
-│   │   └── stages.ts             # 7개 스테이지, 목표, 배치, 보상, 허용 명령
+│   │   └── stages.ts             # 스테이지 목표, 배치, 보상
 │   ├── _client/
 │   │   └── NicknameClient.tsx    # 닉네임 입력과 저장
 │   ├── _components/
@@ -884,8 +864,7 @@ callofllm/
 │   ├── game/
 │   │   ├── _client/
 │   │   │   ├── GameClient.tsx    # 게임·WS·3D·AI 전체 오케스트레이션
-│   │   │   ├── useObjective.ts   # snapshot 기반 목표·패배 판정
-│   │   │   ├── ObjectiveMarkers.tsx
+│   │   │   ├── useObjective.ts   # 서버 STAGE_STATE 기반 승패 판정
 │   │   │   ├── LoadingOverlay.tsx
 │   │   │   ├── BriefingOverlay.tsx
 │   │   │   └── ResultOverlay.tsx
@@ -927,7 +906,7 @@ callofllm/
 |---|---|---|
 | <code>nickname</code> | 최대 16자 닉네임 | 다음 방문에 닉네임 입력 화면 표시 |
 | <code>gamedata</code> | 골드, 보유 병력, 병종별 공격력 표시값, 마지막 클리어 스테이지 | 기본값 500 G, 병력 0, 진행도 0으로 복귀 |
-| <code>deployment</code> | 특정 스테이지의 스쿼드 이름과 병종별 인원 | 해당 스테이지 편성을 다시 구성해야 함 |
+| <code>deployment</code> | 마지막 출전 스테이지와 재사용할 스쿼드 이름·병종별 인원 | 다음 출정 준비 화면이 빈 편성으로 시작 |
 
 ### 저장되지 않는 데이터
 
@@ -939,15 +918,11 @@ callofllm/
 
 페이지를 새로고침하면 위 메모리 상태는 사라집니다.
 
-### 로그아웃
+### 로그아웃과 완전 초기화
 
-헤더의 <code>로그아웃</code>은 <code>nickname</code>만 삭제합니다. 골드, 병력, 강화 표시값, 진행도, 편성은 그대로 남습니다.
+헤더의 <code>로그아웃</code>은 <code>nickname</code>, <code>gamedata</code>, <code>deployment</code>을 함께 삭제합니다. 다시 닉네임을 입력하면 골드 500 G, 병력 0명, 기본 공격력, 스테이지 진행도 0과 빈 편성으로 새 게임을 시작합니다.
 
-### 완전 초기화
-
-처음부터 다시 시작하려면 브라우저 개발자 도구의 Application/Storage 메뉴에서 <code>callofllm.vercel.app</code> 또는 로컬 개발 origin의 사이트 데이터를 삭제하세요.
-
-> 사이트 데이터 삭제는 복구할 수 없습니다. 필요한 진행 데이터가 있다면 먼저 브라우저 저장소를 백업하세요.
+> 로그아웃으로 삭제한 게임 기록은 복구할 수 없습니다. 필요한 진행 데이터가 있다면 먼저 브라우저 저장소를 백업하세요.
 
 ## Vercel 배포
 
@@ -959,10 +934,9 @@ callofllm/
 2. Node.js 22 이상을 사용하도록 프로젝트 런타임을 확인합니다.
 3. Production, Preview, Development 환경에 필요한 환경 변수를 설정합니다.
 4. <code>OPENAI_API_KEY</code>를 서버 전용 비밀로 등록합니다.
-5. <code>OPENAI_MODEL</code>을 설정하거나 기본 <code>gpt-5-mini</code>를 사용합니다.
-6. <code>NEXT_PUBLIC_GAME_WS_URL</code>에 공개 접근 가능한 <code>wss://</code> V15 서버 주소를 입력합니다.
-7. 빌드와 배포를 실행합니다.
-8. <code>NEXT_PUBLIC_GAME_WS_URL</code>을 바꿨다면 반드시 재배포합니다.
+5. <code>NEXT_PUBLIC_GAME_WS_URL</code>에 공개 접근 가능한 <code>wss://</code> V15 서버 주소를 입력합니다.
+6. 빌드와 배포를 실행합니다.
+7. <code>NEXT_PUBLIC_GAME_WS_URL</code>을 바꿨다면 반드시 재배포합니다.
 
 ### 배포 구조에서 중요한 점
 
@@ -1023,13 +997,9 @@ OpenAI API 연결, 모델 ID, Responses API·Structured Outputs 지원 여부, �
 
 스쿼드, 병사, 대상, 거리, 좌표를 현재 전장 상태만으로 하나로 확정할 수 없으면 <code>packetData=null</code>로 되묻는 것이 정상 동작입니다. 스쿼드 이름이나 번호와 원하는 행동을 더 구체적으로 입력하세요.
 
-### “이 스테이지에서는 아직 쓸 수 없는 명령”이 표시됩니다
+### 출정 준비 화면에서 출정할 수 없습니다
 
-스테이지 1~5는 튜토리얼별 허용 명령이 제한되어 있습니다. 현재 목표의 예시 명령을 사용하거나 앞의 [튜토리얼별 허용 명령](#튜토리얼별-허용-명령) 표를 확인하세요.
-
-### 스테이지 6에서 출정할 병력이 없습니다
-
-스테이지 1~5의 아군은 고정 편성이지만 스테이지 6부터는 실제 보유 병력을 사용합니다. 부대 관리의 <code>부대 충원</code>에서 병력을 구매한 뒤 출정 준비 화면에서 스쿼드에 배치하세요.
+초기 보유 병력은 보병·궁수·기병 모두 0명입니다. <code>부대 충원</code>에서 병력을 한 명 이상 충원한 뒤 출정 준비 화면에서 최대 5개 소대 중 하나에 배치하세요. 편성 인원이 0명이면 출정 버튼이 비활성화됩니다.
 
 ### 진행도나 병력이 다른 브라우저에서 보이지 않습니다
 
@@ -1082,7 +1052,7 @@ OpenAI API 연결, 모델 ID, Responses API·Structured Outputs 지원 여부, �
 README의 설명은 현재 소스 코드 기준입니다.
 
 - **온라인 대전:** 메인 메뉴 카드만 있으며 실제 PvP는 준비 중입니다.
-- **맵:** Protocol V15는 외부 맵 1~3을 지원하지만 현재 7개 스테이지는 모두 기본 sandbox 맵 0을 사용합니다.
+- **맵:** Protocol V15는 외부 맵 1~3을 지원하며 현재 스테이지 1~20은 모두 외부 맵 1을 사용합니다.
 - **시설 강화:** localStorage의 공격력 표시값만 증가하며 실제 전투 공격력에는 아직 적용되지 않습니다.
 - **전투 손실:** 사망한 병사는 전투 후 보유 병력에서 차감되지 않습니다.
 - **진행 저장:** 계정이나 서버 DB 없이 localStorage에만 저장됩니다.
@@ -1099,7 +1069,8 @@ README의 설명은 현재 소스 코드 기준입니다.
 
 - [CLIENT_PACKET_SPEC_V15.md](./CLIENT_PACKET_SPEC_V15.md): 전체 바이너리 패킷 규격, enum, lifecycle, 맵 관계
 - [.env.example](./.env.example): 로컬·배포 환경 변수 예시
-- [OpenAI GPT-5 mini 공식 문서](https://developers.openai.com/api/docs/models/gpt-5-mini): 기본 모델의 API와 Structured Outputs 지원 정보
+- [OpenAI GPT-5.6 Luna 공식 문서](https://developers.openai.com/api/docs/models/gpt-5.6-luna): 사용자 명령 모델의 API와 Structured Outputs 지원 정보
+- [OpenAI GPT-5.6 Terra 공식 문서](https://developers.openai.com/api/docs/models/gpt-5.6-terra): 적군 전술 모델의 API와 Structured Outputs 지원 정보
 
 ### 라이선스
 

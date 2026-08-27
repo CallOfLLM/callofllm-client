@@ -11,7 +11,7 @@ import {
 
 export const runtime = "nodejs";
 
-const DEFAULT_MODEL = "gpt-5-mini";
+const ENEMY_COMMAND_MODEL = "gpt-5.6-terra";
 const MAX_REQUEST_LENGTH = 500_000;
 const MAX_SOLDIERS = 2_000;
 const MAX_ENEMY_SQUADS = 64;
@@ -429,12 +429,12 @@ export async function POST(request: Request) {
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) return errorResponse("서버에 OPENAI_API_KEY가 설정되지 않았습니다.", 500);
 
-  const model = process.env.OPENAI_MODEL?.trim() || DEFAULT_MODEL;
   const client = new OpenAI({ apiKey, maxRetries: 1, timeout: 30_000 });
 
   try {
     const response = await client.responses.create({
-      model,
+      model: ENEMY_COMMAND_MODEL,
+      reasoning: { effort: "low" },
       instructions: INSTRUCTIONS,
       input: JSON.stringify({
         strategyMode,

@@ -1,1 +1,54 @@
 @import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  --game-background: #03080f;
+  --game-panel: #0d181e;
+  --game-text: #ded9ca;
+  --game-text-strong: #f0ecdf;
+  --game-muted: #98a1a5;
+  --game-line: rgba(222, 217, 202, 0.24);
+  --game-blue: #7fa4bd;
+  --game-blue-bright: #b9d2e1;
+  --game-red: #c9857d;
+  --game-gold: #d6b96f;
+  --game-display-font: Georgia, "Times New Roman", "Noto Serif KR", serif;
+  --game-body-font: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  background: var(--game-background);
+}
+
+html {
+  min-width: 320px;
+  min-height: 100%;
+  background: var(--game-background);
+}
+
+body {
+  min-height: 100dvh;
+  background: var(--game-background);
+  color: var(--game-text);
+  font-family: var(--game-body-font);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+::selection {
+  background: rgba(85, 145, 185, 0.42);
+  color: var(--game-text-strong);
+}
+
+:where(a, button, input, select, textarea):focus-visible {
+  outline-color: var(--game-blue-bright);
+}
+
+* {
+  scrollbar-color: rgba(127, 164, 189, 0.48) rgba(3, 8, 15, 0.72);
+  scrollbar-width: thin;
+}

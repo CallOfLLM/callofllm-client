@@ -1,14 +1,12 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
-import CommandHeader from "../../../_components/CommandHeader";
+import { useEffect, useState } from "react";
 import {
   createEmptySquad,
   deployedCounts,
-  loadDeployment,
+  loadSavedDeployment,
   MAX_SQUAD_COUNT,
   MAX_SQUAD_SOLDIERS,
   saveDeployment,
@@ -17,6 +15,9 @@ import {
   type DeploymentSquad,
 } from "../../../(lib)/squadfuncs";
 import { DEFAULT_GAME_DATA, loadGameData, type GameData, type TroopKey } from "../../../(lib)/_gametype";
+import GameSelectionShell from "../../../_components/GameSelectionShell";
+import UiPanelFrame from "../../../_components/UiPanelFrame";
+import styles from "./ReadyClient.module.css";
 
 const TROOPS: { key: TroopKey; label: string }[] = [
   { key: "warrior", label: "전사" },
@@ -33,23 +34,27 @@ export default function ReadyClient({ stageID, stageTitle }: ReadyClientProps) {
   const router = useRouter();
   const [gameData, setGameData] = useState<GameData>(DEFAULT_GAME_DATA);
   const [squads, setSquads] = useState<DeploymentSquad[]>([createEmptySquad(0)]);
-  const loadedRef = useRef(false);
+  const [hydratedStageID, setHydratedStageID] = useState<number | null>(null);
 
-  // 로컬스토리지는 서버 렌더 시점에 없으므로 마운트 후에 읽는다.
+  // 마지막 편성을 다음 스테이지에서도 재사용하고, 없으면 빈 스쿼드 하나로 시작한다.
   useEffect(() => {
-    setGameData(loadGameData());
+    const timeoutID = window.setTimeout(() => {
+      const saved = loadSavedDeployment();
 
-    const saved = loadDeployment(stageID);
-    if (saved && saved.squads.length > 0) setSquads(saved.squads);
-    loadedRef.current = true;
+      setGameData(loadGameData());
+      setSquads(saved && saved.squads.length > 0 ? saved.squads : [createEmptySquad(0)]);
+      setHydratedStageID(stageID);
+    }, 0);
+
+    return () => window.clearTimeout(timeoutID);
   }, [stageID]);
 
   // 편성을 바꿀 때마다 저장해 두면 게임 화면이 그대로 읽어 간다.
   // 병력 0인 스쿼드는 생성되지 않으므로 저장에서도 빼야 게임 화면의 순서·이름과 어긋나지 않는다.
   useEffect(() => {
-    if (!loadedRef.current) return;
+    if (hydratedStageID !== stageID) return;
     saveDeployment({ stageID, squads: squads.filter((squad) => squadSoldierCount(squad) > 0) });
-  }, [stageID, squads]);
+  }, [hydratedStageID, stageID, squads]);
 
   const applyEdit = (nextSquads: DeploymentSquad[]) => setSquads(nextSquads);
 
@@ -106,70 +111,64 @@ export default function ReadyClient({ stageID, stageTitle }: ReadyClientProps) {
   };
 
   return (
-    <main className="relative isolate min-h-dvh bg-slate-950 text-white">
-      <Image src={"/bg/main.webp"} fill priority className="-z-10 object-cover object-top" alt="" />
-
-      <CommandHeader />
-
-      <section className="mx-auto max-w-7xl px-6 py-10">
-        <div>
-          <p className="text-sm font-semibold tracking-[0.24em] text-sky-400">STAGE {stageID} · BATTLE READY</p>
-          <h1 className="mt-2 text-3xl font-bold">출정 준비 — {stageTitle}</h1>
-          <p className="mt-3 text-slate-400">스쿼드에 병력을 배치한 뒤 출정하세요. 스쿼드당 최대 {MAX_SQUAD_SOLDIERS}명입니다.</p>
-        </div>
-
-        <Link
-          href="/stage"
-          className="mt-8 flex h-12 w-full items-center justify-center rounded-lg border border-white/15 bg-black/40 text-sm font-semibold text-slate-200 transition hover:border-sky-400/60 hover:bg-sky-400/10 hover:text-sky-300"
-        >
-          돌아가기
-        </Link>
-
-        <dl className="mt-4 flex flex-wrap gap-x-6 gap-y-2 rounded-xl border border-white/10 bg-black/40 px-5 py-4">
+    <GameSelectionShell
+      eyebrow={`STAGE ${stageID} · BATTLE READY`}
+      title={`출정 준비 — ${stageTitle}`}
+      description={`마지막 편성이 있으면 자동으로 불러옵니다. 스쿼드당 최대 ${MAX_SQUAD_SOLDIERS}명입니다.`}
+      backHref="/stage"
+      backLabel="스테이지 선택"
+    >
+      <section className={styles.inventory} aria-label="잔여 병력">
+        <dl>
           {TROOPS.map(({ key, label }) => (
-            <div key={key} className="flex items-baseline gap-2">
-              <dt className="text-sm text-slate-400">잔여 {label}</dt>
-              <dd className="text-base font-bold tabular-nums text-slate-100">
+            <div key={key}>
+              <dt>잔여 {label}</dt>
+              <dd>
                 {remaining[key].toLocaleString()}
-                <span className="ml-1 text-xs font-normal text-slate-500">/ {gameData[key].toLocaleString()}</span>
+                <span>/ {gameData[key].toLocaleString()}</span>
               </dd>
             </div>
           ))}
         </dl>
+        <div className={styles.deployedTotal}>
+          <span>배치 병력</span>
+          <strong>{totalDeployed.toLocaleString()}</strong>
+        </div>
+      </section>
 
-        <div className="mt-4 flex flex-col gap-3">
-          {squads.map((squad, index) => (
-            <div key={index} className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-xl border border-white/10 bg-black/40 p-5">
-              <div className="flex min-w-56 flex-1 items-center gap-3">
-                <span className="text-sm font-semibold text-sky-400">SQUAD {index + 1}</span>
-                <input
-                  value={squad.name}
-                  onChange={(event) => updateSquad(index, { name: event.target.value })}
-                  maxLength={SQUAD_NAME_MAX_LENGTH}
-                  aria-label={`${index + 1}번 스쿼드 이름`}
-                  className="min-w-0 flex-1 rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm font-semibold text-white outline-none transition placeholder:text-white/35 focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20"
-                />
-              </div>
+      <div className={styles.squadList}>
+        {squads.map((squad, index) => (
+          <article key={index} className={styles.squad}>
+            <div className={styles.squadIdentity}>
+              <span>SQUAD {index + 1}</span>
+              <input
+                value={squad.name}
+                onChange={(event) => updateSquad(index, { name: event.target.value })}
+                maxLength={SQUAD_NAME_MAX_LENGTH}
+                aria-label={`${index + 1}번 스쿼드 이름`}
+              />
+            </div>
 
+            <div className={styles.troopControls}>
               {TROOPS.map(({ key, label }) => (
-                <div key={key} className="flex items-center gap-2">
-                  <span className="w-8 text-sm text-slate-400">{label}</span>
+                <div key={key} className={styles.troopControl}>
+                  <span className={styles.troopLabel}>{label}</span>
                   <button
                     type="button"
                     onClick={() => changeCount(index, key, -1)}
                     disabled={squad[key] <= 0}
                     aria-label={`${squad.name} ${label} 감소`}
-                    className="size-8 rounded-lg border border-white/15 bg-black/40 text-lg font-bold text-slate-200 transition hover:border-sky-400/60 hover:bg-sky-400/10 disabled:opacity-30"
+                    className={styles.countButton}
                   >
                     −
                   </button>
-                  <span className="w-10 text-center text-base font-bold tabular-nums text-white">{squad[key]}</span>
+                  <span className={styles.count}>{squad[key]}</span>
                   <button
                     type="button"
                     onClick={() => changeCount(index, key, 1)}
                     disabled={remaining[key] <= 0 || squadSoldierCount(squad) >= MAX_SQUAD_SOLDIERS}
                     aria-label={`${squad.name} ${label} 증가`}
-                    className="size-8 rounded-lg border border-white/15 bg-black/40 text-lg font-bold text-slate-200 transition hover:border-sky-400/60 hover:bg-sky-400/10 disabled:opacity-30"
+                    className={styles.countButton}
                   >
                     +
                   </button>
@@ -178,47 +177,64 @@ export default function ReadyClient({ stageID, stageTitle }: ReadyClientProps) {
                     onClick={() => fillMax(index, key)}
                     disabled={remaining[key] <= 0 || squadSoldierCount(squad) >= MAX_SQUAD_SOLDIERS}
                     aria-label={`${squad.name} ${label} 최대로 채우기`}
-                    className="h-8 rounded-lg border border-white/15 bg-black/40 px-2 text-xs font-bold text-slate-200 transition hover:border-sky-400/60 hover:bg-sky-400/10 disabled:opacity-30"
+                    className={styles.maxButton}
                   >
                     MAX
                   </button>
                 </div>
               ))}
+            </div>
 
-              <span className="text-sm text-slate-400">
-                합계 <strong className="font-bold tabular-nums text-slate-100">{squadSoldierCount(squad)}</strong>
+            <div className={styles.squadSummary}>
+              <span>
+                합계 <strong>{squadSoldierCount(squad)}</strong>
               </span>
-
               <button
                 type="button"
                 onClick={() => removeSquad(index)}
                 disabled={squads.length <= 1}
-                className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm font-semibold text-slate-300 transition hover:border-red-400/60 hover:bg-red-400/10 hover:text-red-300 disabled:opacity-30"
+                className={styles.removeButton}
               >
                 삭제
               </button>
             </div>
-          ))}
-        </div>
+          </article>
+        ))}
+      </div>
 
+      <div className={styles.actions}>
         <button
           type="button"
           onClick={addSquad}
           disabled={squads.length >= MAX_SQUAD_COUNT}
-          className="mt-3 h-12 w-full rounded-lg border border-dashed border-white/20 bg-black/30 text-sm font-semibold text-slate-300 transition hover:border-sky-400/60 hover:bg-sky-400/10 hover:text-sky-300 disabled:opacity-30"
+          className={styles.addButton}
         >
-          스쿼드 추가 ({squads.length}/{MAX_SQUAD_COUNT})
+          <UiPanelFrame
+            variant="slim"
+            className={styles.addFrame}
+            sizes="(max-width: 700px) 100vw, 34rem"
+          />
+          <span className={styles.actionLabel}>스쿼드 추가 ({squads.length}/{MAX_SQUAD_COUNT})</span>
         </button>
 
-        <button
-          type="button"
-          onClick={deploy}
-          disabled={totalDeployed === 0}
-          className="mt-4 h-14 w-full rounded-lg bg-sky-500 text-base font-bold text-slate-950 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {totalDeployed === 0 ? "병력을 배치해 주세요" : `출정 (${totalDeployed.toLocaleString()}명)`}
+        <button type="button" onClick={deploy} disabled={totalDeployed === 0} className={styles.deployButton}>
+          <UiPanelFrame variant="slim" className={styles.deployFrame} sizes="(max-width: 700px) 100vw, 34rem" />
+          <span className={styles.actionLabel}>
+            {totalDeployed === 0 ? "병력을 배치해 주세요" : `출정 (${totalDeployed.toLocaleString()}명)`}
+          </span>
+          <span className={styles.deployAccent} aria-hidden="true">
+            <Image
+              src="/ui/pack/accent-blue.webp"
+              alt=""
+              fill
+              sizes="18rem"
+              draggable={false}
+              unoptimized
+              className={styles.deployAccentArt}
+            />
+          </span>
         </button>
-      </section>
-    </main>
+      </div>
+    </GameSelectionShell>
   );
 }

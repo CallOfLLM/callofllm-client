@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { completeStage, DEFAULT_GAME_DATA, loadGameData, saveGameData } from "../../../(lib)/_gametype";
 import { loadDeployment, type StageDeployment } from "../../../(lib)/squadfuncs";
-import { findStage, isTutorialStage, nextStageID, STAGES, type StageData } from "../../../(lib)/stages";
+import { findStage, nextStageID, STAGES, type StageData } from "../../../(lib)/stages";
 
 interface SelectedStageState {
   stage: StageData | null;
@@ -38,7 +38,7 @@ function selectStage(search: string): { stage: StageData; usedFallback: boolean 
   };
 }
 
-/** 클리어 후 넘어갈 주소. 고정 편성 튜토리얼은 준비 화면을 건너뛴다. */
+/** 클리어 후 다음 스테이지의 플레이어 편성을 준비할 주소. */
 export function getNextStageHref(stageID: number): string | null {
   const nextID = nextStageID(stageID);
   if (nextID === null) return null;
@@ -46,7 +46,7 @@ export function getNextStageHref(stageID: number): string | null {
   const nextStage = findStage(nextID);
   if (!nextStage) return null;
 
-  return isTutorialStage(nextStage) ? `/game?stage=${nextID}` : `/stage/ready?stage=${nextID}`;
+  return `/stage/ready?stage=${nextID}`;
 }
 
 /** 브라우저 URL과 저장 데이터를 마운트 후 한 번 읽어 현재 스테이지에 묶어 준다. */

@@ -1,11 +1,13 @@
 import Image from "next/image";
-import Link from "next/link";
-import CommandHeader from "./CommandHeader";
+import GameSelectionShell from "./GameSelectionShell";
+import UiPanelFrame from "./UiPanelFrame";
+import styles from "./SelectionButtonPage.module.css";
 
 export type SelectionItem = {
   label: string;
   eyebrow: string;
   description: string;
+  icon?: string;
   /** 있으면 카드에 소모 골드를 표시한다. */
   cost?: number;
   /** 있으면 카드 우측에 현재 상태를 표시한다. 예: "보유 3", "공격력 13" */
@@ -24,48 +26,62 @@ type SelectionButtonPageProps = {
 
 export default function SelectionButtonPage({ eyebrow, title, description, items, onSelect }: SelectionButtonPageProps) {
   return (
-    <main className="relative isolate min-h-dvh bg-slate-950 text-white">
-      <Image src={"/bg/main.webp"} fill priority className="-z-10 object-cover object-top" alt="" />
+    <GameSelectionShell eyebrow={eyebrow} title={title} description={description}>
+      <div className={styles.grid}>
+        {items.map((item) => {
+          const accent = item.disabled ? "/ui/pack/accent-red.webp" : "/ui/pack/accent-blue.webp";
 
-      <CommandHeader />
-
-      <section className="mx-auto max-w-7xl px-6 py-10">
-        <div>
-          <p className="text-sm font-semibold tracking-[0.24em] text-sky-400">{eyebrow}</p>
-          <h1 className="mt-2 text-3xl font-bold">{title}</h1>
-          <p className="mt-3 text-slate-400">{description}</p>
-        </div>
-
-        <Link
-          href="/main"
-          className="mt-8 flex h-12 w-full items-center justify-center rounded-lg border border-white/15 bg-black/40 text-sm font-semibold text-slate-200 transition hover:border-sky-400/60 hover:bg-sky-400/10 hover:text-sky-300"
-        >
-          돌아가기
-        </Link>
-
-        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {items.map((item) => (
+          return (
             <button
               key={item.label}
               type="button"
               disabled={item.disabled}
               onClick={onSelect && (() => onSelect(item))}
-              className="min-h-48 rounded-xl border border-white/10 bg-black/40 p-5 text-left transition hover:-translate-y-1 hover:border-sky-400/50 hover:bg-sky-400/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400 disabled:pointer-events-none disabled:opacity-40"
+              className={styles.item}
             >
-              <span className="text-sm font-semibold text-sky-400">{item.eyebrow}</span>
-              <strong className="mt-5 block text-xl font-bold text-white">{item.label}</strong>
-              <span className="mt-2 block text-sm leading-6 text-slate-400">{item.description}</span>
+              <span className={styles.icon} aria-hidden="true">
+                <Image
+                  src={item.icon ?? "/ui/pack/shield.webp"}
+                  alt=""
+                  fill
+                  sizes="(max-width: 700px) 84px, 104px"
+                  draggable={false}
+                  unoptimized
+                  className={styles.iconArt}
+                />
+              </span>
 
-              {item.cost !== undefined && (
-                <span className="mt-4 flex items-baseline justify-between">
-                  <span className="text-base font-bold text-amber-300">{item.cost.toLocaleString()} G</span>
-                  {item.meta && <span className="text-sm text-slate-400">{item.meta}</span>}
+              <span className={styles.copy}>
+                <UiPanelFrame className={styles.frame} sizes="(max-width: 700px) 72vw, 19rem" />
+                <span className={styles.copyContent}>
+                  <span className={styles.eyebrow}>{item.eyebrow}</span>
+                  <strong>{item.label}</strong>
+                  <span className={styles.description}>{item.description}</span>
+
+                  {item.cost !== undefined && (
+                    <span className={styles.footer}>
+                      <span>{item.cost.toLocaleString()} G</span>
+                      {item.meta && <span>{item.meta}</span>}
+                    </span>
+                  )}
                 </span>
-              )}
+
+                <span className={styles.accent} aria-hidden="true">
+                  <Image
+                    src={accent}
+                    alt=""
+                    fill
+                    sizes="12rem"
+                    draggable={false}
+                    unoptimized
+                    className={styles.accentArt}
+                  />
+                </span>
+              </span>
             </button>
-          ))}
-        </div>
-      </section>
-    </main>
+          );
+        })}
+      </div>
+    </GameSelectionShell>
   );
 }
